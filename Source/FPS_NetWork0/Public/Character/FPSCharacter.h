@@ -1,0 +1,73 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/Character.h"
+#include "Interfaces/PlayerInterface.h"
+#include "FPSCharacter.generated.h"
+
+class UCombatComponent;
+class UInputAction;
+class UCameraComponent;
+class USpringArmComponent;
+
+UCLASS()
+class FPS_NETWORK0_API AFPSCharacter : public ACharacter,public IPlayerInterface
+{
+	GENERATED_BODY()
+public:
+	AFPSCharacter();
+	
+	virtual void Tick(float DeltaTime) override;
+	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+	virtual void PossessedBy(AController* NewController) override;
+	
+	/*Interface*/
+	FName GetWeaponGripPoint_Implementation(const FGameplayTag& WeaponType) const override;;
+	
+	USkeletalMeshComponent* GetMesh3P_Implementation() const ;
+	
+	USkeletalMeshComponent* GetMesh1P_Implementation() const;
+	/*Interface*/
+protected:
+	virtual void BeginPlay() override;
+	
+	virtual void BeginDestroy() override;
+private:
+	UPROPERTY(EditAnywhere)
+	TObjectPtr<USkeletalMeshComponent> Mesh1P;
+	
+	UPROPERTY(EditAnywhere)
+	TObjectPtr<USpringArmComponent> SpringArm1P;
+	
+	UPROPERTY(EditAnywhere)
+	TObjectPtr<UCameraComponent> Camera1P;
+	
+	UPROPERTY(EditAnywhere)
+	TObjectPtr<UCombatComponent> CombatComponent;
+	
+	UPROPERTY(EditAnywhere)
+	TObjectPtr<UInputAction> IA_FireWeapon;
+	
+	UPROPERTY(EditAnywhere)
+	TObjectPtr<UInputAction> IA_ReloadWeapon;
+	
+	UPROPERTY(EditAnywhere)
+	TObjectPtr<UInputAction> IA_CycleWeapon;
+	
+	UPROPERTY(EditAnywhere)
+	TObjectPtr<UInputAction> IA_AimWeapon;
+	
+	UFUNCTION()
+	void Input_FireWeapon_Pressed();
+	UFUNCTION()
+	void Input_FireWeapon_Released();
+	UFUNCTION()
+	void Input_AimWeapon_Pressed();
+	UFUNCTION()
+	void Input_AimWeapon_Released();
+	UFUNCTION()
+	void Input_CycleWeapon();
+	UFUNCTION()
+	void Input_ReloadWeapon();
+	
+};
