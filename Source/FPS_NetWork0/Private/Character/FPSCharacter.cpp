@@ -1,12 +1,18 @@
 #include "Character/FPSCharacter.h"
 
 #include "EnhancedInputComponent.h"
+#include "VectorTypes.h"
 #include "Camera/CameraComponent.h"
 #include "Combat/CombatComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Data/WeaponData.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Kismet/KismetMathLibrary.h"
+#include "Math/UnitConversion.h"
+#include "ShooterTypes/ShooterTypes.h"
+#include "Weapon/Weapon.h"
+
 
 AFPSCharacter::AFPSCharacter()
 {
@@ -41,11 +47,32 @@ AFPSCharacter::AFPSCharacter()
 	
 	CombatComponent=CreateDefaultSubobject<UCombatComponent>("CombatComponent");
 	CombatComponent->SetIsReplicated(true);
+	
+	DefaultFieldOfView=90.0f;
+}
+
+FRotator AFPSCharacter::GetFixedAimRotation() const
+{
+	FRotator AimRotation=GetBaseAimRotation();
+	if (AimRotation.Pitch>90&&!IsLocallyControlled())//因为是在多人游戏传递中才会出现，只用在其他客户端修正即可
+	{
+		FVector2D InRange(270,360);
+		FVector2D OutRange(-90,0);
+		AimRotation.Pitch=FMath::GetMappedRangeValueClamped(InRange,OutRange,AimRotation.Pitch);
+	}
+	return AimRotation;
+}
+
+bool AFPSCharacter::HasCurrentWeapon() const
+{
+	return IsValid(CombatComponent)&&CombatComponent->CurrentWeapon!=nullptr;
 }
 
 void AFPSCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	Camera1P->SetFieldOfView(DefaultFieldOfView);
+	StartingAimRotation=FRotator(0.0f,GetBaseAimRotation().Pitch,0.0f);
 }
 
 void AFPSCharacter::BeginDestroy()
@@ -58,6 +85,79 @@ void AFPSCharacter::BeginDestroy()
 void AFPSCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+	CalculateFABRIK_SocketTransform();
+	CalculateTurnParameters(DeltaTime);
+}
+
+void AFPSCharacter::CalculateFABRIK_SocketTransform()
+{
+	if (IsValid(CombatComponent)&&IsValid(CombatComponent->CurrentWeapon)&&IsValid(CombatComponent->CurrentWeapon->GetMesh3P()))
+	{
+		FABRIK_SocketTransform=CombatComponent->CurrentWeapon->GetMesh3P()->GetSocketTransform("FABRIK_Socket",RTS_World);
+		FVector OutLocation;
+		FRotator OutRotation;
+		GetMesh()->TransformToBoneSpace(
+			"hand_r",
+			FABRIK_SocketTransform.GetLocation(),
+			FABRIK_SocketTransform.GetRotation().Rotator(),
+			OutLocation,
+			OutRotation);
+		FABRIK_SocketTransform.SetLocation(OutLocation);
+		FABRIK_SocketTransform.SetRotation(OutRotation.Quaternion());
+	}
+}
+
+void AFPSCharacter::CalculateTurnParameters(float DeltaTime)
+{
+	FVector NowSpeed=GetVelocity();
+	NowSpeed.Z=0;
+	float Speed=NowSpeed.Size();
+	bool bIsAir=GetCharacterMovement()->IsFalling();
+	
+	if (Speed==0.0f&&!bIsAir)
+	{
+		FRotator CurrentAimRotation=FRotator(0.0f,GetBaseAimRotation().Yaw,0.0f);
+		FRotator DeltaRotation=UKismetMathLibrary::NormalizedDeltaRotator(CurrentAimRotation,StartingAimRotation);
+		AO_Yaw=DeltaRotation.Yaw;
+		if (TurningState==ETurning::NotTurning)
+		{
+			InterpAO_Yaw=AO_Yaw;
+		}
+		TurnToMovement(DeltaTime);
+	}
+	if (Speed>0.0f||bIsAir)
+	{
+		StartingAimRotation=FRotator(0.0f,GetBaseAimRotation().Yaw,0.0f);
+		AO_Yaw=0;
+		FRotator AimRotation=GetBaseAimRotation();
+		FRotator MovementRotation=UKismetMathLibrary::MakeRotFromX(GetVelocity());
+		MovementOffsetYaw=UKismetMathLibrary::NormalizedDeltaRotator(AimRotation,MovementRotation).Yaw;
+		TurningState=ETurning::NotTurning;
+	}
+	AO_Yaw*=-1.0f;
+}
+
+void AFPSCharacter::TurnToMovement(float DeltaTime)
+{
+	if (AO_Yaw>90.0f)
+	{
+		TurningState=ETurning::Right;
+	}
+	else if (AO_Yaw<-90.0f)
+	{
+		TurningState=ETurning::Left;
+	}
+	if (TurningState!=ETurning::NotTurning)
+	{
+		InterpAO_Yaw=FMath::FInterpTo(InterpAO_Yaw,0.0f,DeltaTime,4);
+		AO_Yaw=InterpAO_Yaw;
+		if (FMath::Abs(AO_Yaw)<5.0f)
+		{
+			StartingAimRotation=FRotator(0.0f,GetBaseAimRotation().Yaw,0.0f);
+			TurningState=ETurning::NotTurning;
+			AO_Yaw=0;//Tips
+		}
+	}
 }
 
 void AFPSCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -111,11 +211,13 @@ void AFPSCharacter::Input_FireWeapon_Released()
 void AFPSCharacter::Input_AimWeapon_Pressed()
 {
 	CombatComponent->Initiate_AimWeapon_Pressed();
+	OnAim(true);
 }
 
 void AFPSCharacter::Input_AimWeapon_Released()
 {
 	CombatComponent->Initiate_AimWeapon_Released();
+	OnAim(false);
 }
 
 void AFPSCharacter::Input_CycleWeapon()
@@ -127,6 +229,8 @@ void AFPSCharacter::Input_ReloadWeapon()
 {
 	CombatComponent->Initiate_ReloadWeapon();
 }
+
+
 
 
 

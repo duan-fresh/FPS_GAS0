@@ -9,6 +9,7 @@ class UCombatComponent;
 class UInputAction;
 class UCameraComponent;
 class USpringArmComponent;
+enum class ETurning: uint8;
 
 UCLASS()
 class FPS_NETWORK0_API AFPSCharacter : public ACharacter,public IPlayerInterface
@@ -28,6 +29,45 @@ public:
 	
 	USkeletalMeshComponent* GetMesh1P_Implementation() const;
 	/*Interface*/
+	
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="FPS|Combat")
+	TObjectPtr<UCombatComponent> CombatComponent;
+	
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="FPS|Camera")
+	float DefaultFieldOfView;
+	
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="FPS|Camera")
+	TObjectPtr<UCameraComponent> Camera1P;
+	
+	UFUNCTION(BlueprintImplementableEvent)
+	void OnAim(bool PressedAim);
+	
+	UFUNCTION(BlueprintCallable)
+	FRotator GetFixedAimRotation() const;
+
+	UPROPERTY(BlueprintReadOnly,Category="FPS|FABRIK")
+	FTransform FABRIK_SocketTransform;
+	
+	UFUNCTION(BlueprintCallable)
+	bool HasCurrentWeapon()const;
+	
+#pragma region TurnAim
+	UPROPERTY(BlueprintReadOnly)
+	FRotator StartingAimRotation;
+	
+	UPROPERTY(BlueprintReadOnly)
+	float AO_Yaw;//相对于Movement的朝向Yaw
+	
+	UPROPERTY(BlueprintReadOnly)
+	float InterpAO_Yaw;
+	
+	UPROPERTY(BlueprintReadOnly)
+	float MovementOffsetYaw;
+	
+	UPROPERTY(BlueprintReadOnly)
+	ETurning TurningState;
+
+#pragma endregion
 protected:
 	virtual void BeginPlay() override;
 	
@@ -38,12 +78,6 @@ private:
 	
 	UPROPERTY(EditAnywhere)
 	TObjectPtr<USpringArmComponent> SpringArm1P;
-	
-	UPROPERTY(EditAnywhere)
-	TObjectPtr<UCameraComponent> Camera1P;
-	
-	UPROPERTY(EditAnywhere)
-	TObjectPtr<UCombatComponent> CombatComponent;
 	
 	UPROPERTY(EditAnywhere)
 	TObjectPtr<UInputAction> IA_FireWeapon;
@@ -69,5 +103,14 @@ private:
 	void Input_CycleWeapon();
 	UFUNCTION()
 	void Input_ReloadWeapon();
+	
+	UFUNCTION()
+	void CalculateFABRIK_SocketTransform();
+	
+	UFUNCTION()
+	void CalculateTurnParameters(float DeltaTime);
+	
+	UFUNCTION()
+	void TurnToMovement(float DeltaTime);
 	
 };

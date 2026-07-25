@@ -18,11 +18,16 @@ public:
 	virtual void OnRep_Instigator() override;
 	
 	void SetupAttachment();
+	
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="FPS|WeaponType")
+	FGameplayTag WeaponType;
+
+	UFUNCTION()
+	USkeletalMeshComponent* GetMesh3P();
+	UFUNCTION()
+	USkeletalMeshComponent* GetMesh1P();
 protected:
 	virtual void BeginPlay() override;
-
-	UPROPERTY(EditAnywhere,Category="FPS|WeaponType")
-	FGameplayTag WeaponType;
 
 private:
 	UPROPERTY(EditAnywhere)

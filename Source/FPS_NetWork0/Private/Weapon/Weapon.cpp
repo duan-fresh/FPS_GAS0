@@ -44,13 +44,23 @@ void AWeapon::BeginPlay()
 void AWeapon::SetupAttachment()
 {
 	ACharacter* WeaponOwner = Cast<ACharacter>(GetOwner());
-	if (!IsValid(WeaponOwner)&&!WeaponOwner->Implements<UPlayerInterface>()) return ;
+	if (!IsValid(WeaponOwner)||!WeaponOwner->Implements<UPlayerInterface>()) return ;
 	SetupVisibility(WeaponOwner);
 	const FName GripPoint=IPlayerInterface::Execute_GetWeaponGripPoint(WeaponOwner,WeaponType);
 	USkeletalMeshComponent* OwnerMesh1P=IPlayerInterface::Execute_GetMesh1P(WeaponOwner);
 	USkeletalMeshComponent* OwnerMesh3P=IPlayerInterface::Execute_GetMesh3P(WeaponOwner);
 	Mesh1P->AttachToComponent(OwnerMesh1P,FAttachmentTransformRules::KeepRelativeTransform,GripPoint);
 	Mesh3P->AttachToComponent(OwnerMesh3P,FAttachmentTransformRules::KeepRelativeTransform,GripPoint);
+}
+
+USkeletalMeshComponent* AWeapon::GetMesh3P()
+{
+	return Mesh3P;
+}
+
+USkeletalMeshComponent* AWeapon::GetMesh1P()
+{
+	return Mesh1P;
 }
 
 void AWeapon::SetupVisibility(const APawn* OwningPawn) const

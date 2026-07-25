@@ -26,8 +26,11 @@ public:
 
 	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
 	
-	UPROPERTY(EditDefaultsOnly, Category = "FPS|Weapon")
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly, Category = "FPS|Weapon")
 	TObjectPtr<UWeaponData> WeaponDataAsset;
+	
+	UPROPERTY(Transient,BlueprintReadOnly,ReplicatedUsing=OnRep_CurrentWeapon);
+	TObjectPtr<AWeapon> CurrentWeapon;
 	
 	UFUNCTION()
 	void SpawnInventory();
@@ -44,14 +47,25 @@ public:
 	void Initiate_FireWeapon_Released();
 	void Initiate_AimWeapon_Pressed();
 	void Initiate_AimWeapon_Released();
+#pragma region Aim
+	UPROPERTY(Replicated,EditDefaultsOnly,BlueprintReadOnly)
+	bool bAiming=false;
+	
+	UFUNCTION(Server,Reliable)
+	void Server_Aiming(bool Aim);
+	
+	void Local_Aiming(bool Aim);
+	
+	UFUNCTION(BlueprintCallable)
+	float GetFOV() const;
+	
+#pragma endregion	
+
 protected:
 	
 private:
 	UPROPERTY(Transient,Replicated)
 	TArray<AWeapon*> WeaponsInventory;
-	
-	UPROPERTY(Transient,ReplicatedUsing=OnRep_CurrentWeapon);
-	TObjectPtr<AWeapon> CurrentWeapon;
 	
 	UFUNCTION()
 	void OnRep_CurrentWeapon(AWeapon* LastWeapon);

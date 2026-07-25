@@ -3,9 +3,11 @@
 
 #include "Combat/CombatComponent.h"
 
+#include "Data/WeaponData.h"
 #include "Engine/Engine.h"
 #include "GameFramework/Pawn.h"
 #include "Net/UnrealNetwork.h"
+#include "ViewportInteractions/ViewportInteraction.h"
 #include "Weapon/Weapon.h"
 
 
@@ -20,7 +22,6 @@ void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 									 FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-	
 }
 
 void UCombatComponent::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const
@@ -28,6 +29,7 @@ void UCombatComponent::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(UCombatComponent,WeaponsInventory);
 	DOREPLIFETIME(UCombatComponent,CurrentWeapon);
+	DOREPLIFETIME_CONDITION(UCombatComponent,bAiming,COND_SkipOwner);
 }
 
 void UCombatComponent::SpawnInventory()
@@ -98,12 +100,35 @@ void UCombatComponent::Initiate_FireWeapon_Released()
 
 void UCombatComponent::Initiate_AimWeapon_Pressed()
 {
-	GEngine->AddOnScreenDebugMessage(-1,10,FColor::Green,TEXT("AimWeapon_Pressed"),false);
+	Local_Aiming(true);
+	Server_Aiming(true);
 }
 
 void UCombatComponent::Initiate_AimWeapon_Released()
 {
-	GEngine->AddOnScreenDebugMessage(-1,10,FColor::Green,TEXT("AimWeapon_Released"),false);
+	Local_Aiming(false);
+	Server_Aiming(false);
+}
+
+void UCombatComponent::Server_Aiming_Implementation(bool Aim)
+{
+	Local_Aiming(Aim);
+}
+
+void UCombatComponent::Local_Aiming(bool Aim)
+{
+	bAiming=Aim;
+}
+
+float UCombatComponent::GetFOV() const
+{
+	if (!IsValid(WeaponDataAsset)||!IsValid(CurrentWeapon)) return 90.0f;
+	const float* FOV=WeaponDataAsset->FieldOfViews.Find(CurrentWeapon->WeaponType);
+	if (FOV)
+	{
+		return *FOV;
+	}
+	return 90.0f;
 }
 
 
