@@ -8,6 +8,7 @@
 #include "CombatComponent.generated.h"
 
 
+struct FHitResult;
 class AWeapon;
 class UWeaponData;
 class UDataAsset;
@@ -61,6 +62,20 @@ public:
 	
 #pragma endregion	
 
+	void Local_Fire();
+	
+	UFUNCTION(Server,Reliable)
+	void Sever_Fire(const FHitResult& Hit);
+	
+	UFUNCTION(NetMulticast,Reliable)
+	void NetMulticast_Fire(const FHitResult& Hit);
+	
+	UPROPERTY()
+	FTimerHandle FireTimer;
+	
+	bool bIsPressed;
+	
+	void Timer_AutoFire();
 protected:
 	
 private:
@@ -75,6 +90,9 @@ private:
 	
 	UFUNCTION()
 	AWeapon* SpawnWeapon(const TSubclassOf<AWeapon> Weaponclass) const;
+	
+	UPROPERTY(EditDefaultsOnly)
+	float FireRange;
 };
 
 

@@ -3,10 +3,17 @@
 
 #include "Combat/CombatComponent.h"
 
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Data/WeaponData.h"
 #include "Engine/Engine.h"
+#include "Engine/SkeletalMesh.h"
+#include "GameFramework/Character.h"
 #include "GameFramework/Pawn.h"
+#include "Interfaces/PlayerInterface.h"
 #include "Net/UnrealNetwork.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
 #include "ViewportInteractions/ViewportInteraction.h"
 #include "Weapon/Weapon.h"
 
@@ -14,7 +21,9 @@
 UCombatComponent::UCombatComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
-	
+	FireRange=20000;
+	bIsPressed=false;
+	bAiming=false;
 }
 
 
@@ -59,6 +68,8 @@ void UCombatComponent::EquipWeapon(AWeapon* Weapon)
 	CurrentWeapon->SetupAttachment();
 }
 
+
+
 void UCombatComponent::OnRep_CurrentWeapon(AWeapon* LastWeapon)
 {
 	if (!IsValid(CurrentWeapon)) return ;
@@ -90,12 +101,65 @@ void UCombatComponent::Initiate_ReloadWeapon()
 
 void UCombatComponent::Initiate_FireWeapon_Pressed()
 {
-	GEngine->AddOnScreenDebugMessage(-1,10,FColor::Green,TEXT("FireWeapon_Pressed"),false);
+	Local_Fire();
+	bIsPressed=true;
 }
 
 void UCombatComponent::Initiate_FireWeapon_Released()
 {
-	GEngine->AddOnScreenDebugMessage(-1,10,FColor::Green,TEXT("FireWeapon_Released"),false);
+	bIsPressed=false;
+}
+
+void UCombatComponent::Local_Fire()
+{
+	if (!IsValid(CurrentWeapon)||!IsValid(WeaponDataAsset)) return;
+	UAnimMontage* FireMontage1P=WeaponDataAsset->FirstMontages.Find(CurrentWeapon->WeaponType)->FireAnim;
+	USkeletalMeshComponent* Mesh1P=IPlayerInterface::Execute_GetMesh1P(GetOwner());
+	if (IsValid(Mesh1P)&&IsValid(FireMontage1P))
+	{
+		Mesh1P->GetAnimInstance()->Montage_Play(FireMontage1P);
+	}
+	FHitResult Hit;
+	CurrentWeapon->FireTrace(Hit,FireRange);
+	
+	EPhysicalSurface ImpactSurfaceType=Hit.PhysMaterial.IsValid(false) ? Hit.PhysMaterial->SurfaceType.GetValue() : SurfaceType1;
+	CurrentWeapon->Local_Fire(Hit.ImpactPoint,Hit.ImpactNormal,ImpactSurfaceType,true);
+	
+	GetWorld()->GetTimerManager().SetTimer(FireTimer,this,&ThisClass::Timer_AutoFire,CurrentWeapon->FireTime);
+	
+	Sever_Fire(Hit);
+}
+
+void UCombatComponent::Timer_AutoFire()
+{
+	if (!IsValid(CurrentWeapon)) return;
+	if (CurrentWeapon->FireType==EFireType::Auto&&bIsPressed)
+	{
+		Local_Fire();
+	}
+}
+
+void UCombatComponent::Sever_Fire_Implementation(const FHitResult& Hit)
+{
+	NetMulticast_Fire(Hit);
+}
+
+void UCombatComponent::NetMulticast_Fire_Implementation(const FHitResult& Hit)
+{
+	if (!GetOwner()->HasLocalNetOwner())
+	{
+		if (!IsValid(CurrentWeapon)||!IsValid(WeaponDataAsset)) return;
+		
+		EPhysicalSurface ImpactSurfaceType=Hit.PhysMaterial.IsValid(false) ? Hit.PhysMaterial->SurfaceType.GetValue() : SurfaceType1;
+		CurrentWeapon->Local_Fire(Hit.ImpactPoint,Hit.ImpactNormal,ImpactSurfaceType,false);
+		
+		UAnimMontage* FireMontage3P=WeaponDataAsset->ThirdMontages.Find(CurrentWeapon->WeaponType)->FireAnim;
+		USkeletalMeshComponent* Mesh3P=IPlayerInterface::Execute_GetMesh3P(GetOwner());
+		if (Mesh3P&&FireMontage3P)
+		{
+			Mesh3P->GetAnimInstance()->Montage_Play(FireMontage3P);
+		}
+	}
 }
 
 void UCombatComponent::Initiate_AimWeapon_Pressed()

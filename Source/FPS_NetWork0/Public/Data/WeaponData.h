@@ -7,6 +7,7 @@
 #include "Engine/DataAsset.h"
 #include "WeaponData.generated.h"
 
+class UAnimMontage;
 class UBlendSpace;
 class UAnimSequence;
 
@@ -39,6 +40,18 @@ struct FShooterAnims
 	TObjectPtr<UBlendSpace> Strafe_Crouching=nullptr;
 };
 
+USTRUCT(BlueprintType)
+struct FShooterMontage
+{
+	GENERATED_BODY()
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly)
+	TObjectPtr<UAnimMontage> FireAnim=nullptr;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly)
+	TObjectPtr<UAnimMontage> CycleAnim=nullptr;
+	UPROPERTY(EditDefaultsOnly,BlueprintReadOnly)
+	TObjectPtr<UAnimMontage> ReloadAnim=nullptr;
+};
+
 UCLASS()
 class FPS_NETWORK0_API UWeaponData : public UDataAsset
 {
@@ -55,6 +68,15 @@ public:
 	
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="FPS|WeaponData|Camera")
 	TMap<FGameplayTag,float> FieldOfViews;
+	
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="FPS|WeaponData|Montage")
+	TMap<FGameplayTag,FShooterMontage> FirstMontages;
+	
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="FPS|WeaponData|Montage")
+	TMap<FGameplayTag,FShooterMontage> ThirdMontages;
+	
+	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="FPS|WeaponData|Montage")
+	TMap<FGameplayTag,FShooterMontage> WeaponMontages;
 private:
 	
 };
