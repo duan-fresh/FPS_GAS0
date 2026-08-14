@@ -16,7 +16,10 @@ public class FPS_NetWork0 : ModuleRules
 			"InputCore", 
 			"EnhancedInput",
 			"GameplayTags",
-			"PhysicsCore"
+			"PhysicsCore",
+			"Slate",
+			"UMG",
+			"SlateCore",
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });

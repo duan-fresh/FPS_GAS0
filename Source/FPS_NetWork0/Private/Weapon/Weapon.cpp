@@ -10,6 +10,7 @@
 #include "GameFramework/Character.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "Materials/MaterialInstanceDynamic.h"
 
 
 AWeapon::AWeapon()
@@ -34,6 +35,10 @@ AWeapon::AWeapon()
 	
 	TraceRadius=5.0f;
 	FireTime=0.1f;
+	Ammo=10;
+	StartingAmmo=5;
+	MaxCapacity=10;
+	Sequence=0;
 }
 
 void AWeapon::OnRep_Instigator()
@@ -73,14 +78,32 @@ void AWeapon::SetupVisibility(const APawn* OwningPawn) const
 	}
 }
 
-USkeletalMeshComponent* AWeapon::GetMesh3P()
+USkeletalMeshComponent* AWeapon::GetMesh3P() const 
 {
 	return Mesh3P;
 }
 
-USkeletalMeshComponent* AWeapon::GetMesh1P()
+USkeletalMeshComponent* AWeapon::GetMesh1P() const 
 {
 	return Mesh1P;
+}
+
+UMaterialInstanceDynamic* AWeapon::GetReticleInstance()
+{
+	if (!IsValid(ReticleMaterialInstance))
+	{
+		ReticleMaterialInstance=UMaterialInstanceDynamic::Create(ReticleMaterialInterface,this);
+	}
+	return ReticleMaterialInstance;
+}
+
+UMaterialInstanceDynamic* AWeapon::GetAmmoCounterInstance()
+{
+	if (!IsValid(AmmoCounterMaterialInstance))
+	{
+		AmmoCounterMaterialInstance=UMaterialInstanceDynamic::Create(AmmoCounterMaterialInterface,this);
+	}
+	return AmmoCounterMaterialInstance;
 }
 
 void AWeapon::FireTrace(FHitResult& Hit,const float FireRange)
@@ -124,6 +147,25 @@ void AWeapon::Local_Fire(const FVector& ImpactPoint, const FVector& ImpactNormal
 	TEnumAsByte<EPhysicalSurface> ImpactSurfaceType, bool bIsFistPerson)
 {
 	FireEffects(ImpactPoint,ImpactNormal,ImpactSurfaceType,bIsFistPerson);
+	if (GetInstigator()->IsLocallyControlled())
+	{
+		Ammo=FMath::Clamp(Ammo-1,0,MaxCapacity);
+		Sequence++;
+	}
+}
+
+void AWeapon::Auth_Fire()
+{
+	Ammo=FMath::Clamp(Ammo-1,0,MaxCapacity);
+}
+
+void AWeapon::Rep_Fire(int Auth_Ammo)
+{
+	if (GetInstigator()->IsLocallyControlled())
+	{
+		--Sequence;
+		Ammo=FMath::Clamp(Auth_Ammo-Sequence,0,MaxCapacity);
+	}
 }
 
 

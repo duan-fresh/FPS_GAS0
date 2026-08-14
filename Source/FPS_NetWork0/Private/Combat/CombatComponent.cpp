@@ -3,15 +3,18 @@
 
 #include "Combat/CombatComponent.h"
 
+#include "EditorCategoryUtils.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Data/WeaponData.h"
 #include "Engine/Engine.h"
 #include "Engine/SkeletalMesh.h"
+#include "FPS_NetWork0/FPS_NetWork0.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/Pawn.h"
 #include "Interfaces/PlayerInterface.h"
+#include "Kismet/KismetMathLibrary.h"
 #include "Net/UnrealNetwork.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "ViewportInteractions/ViewportInteraction.h"
@@ -24,6 +27,7 @@ UCombatComponent::UCombatComponent()
 	FireRange=20000;
 	bIsPressed=false;
 	bAiming=false;
+	bHitPlayerLastFrame=false;
 }
 
 
@@ -31,6 +35,38 @@ void UCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 									 FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	APawn* OwningPawn = Cast<APawn>(GetOwner());
+	if (!IsValid(OwningPawn) || !OwningPawn->IsLocallyControlled()) return;
+	
+	APlayerController* PC = Cast<APlayerController>(OwningPawn->GetController());
+	if (!IsValid(PC)) return;
+	
+	FVector EyeLocation;
+	FRotator EyeRotation;
+	GetOwner()->GetActorEyesViewPoint(EyeLocation, EyeRotation);
+	FVector ForwardVector=UKismetMathLibrary::GetForwardVector(EyeRotation);
+	FVector Start=EyeLocation;
+	FVector End=Start+ForwardVector*FireRange;
+	
+	FHitResult Hit;
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(GetOwner());
+	FCollisionResponseParams ResponseParams;
+	ResponseParams.CollisionResponse.SetAllChannels(ECR_Ignore);
+	ResponseParams.CollisionResponse.SetResponse(ECC_PhysicsBody,ECR_Block);
+	ResponseParams.CollisionResponse.SetResponse(ECC_Pawn,ECR_Block);
+	
+	GetWorld()->LineTraceSingleByChannel(Hit,Start,End, FPSTraceChannels::ECC_Weapon,QueryParams,ResponseParams);
+	
+	bHitPlayer = IsValid(Hit.GetActor()) && Hit.GetActor()->Implements<UPlayerInterface>();
+	
+	if (bHitPlayer != bHitPlayerLastFrame)
+	{
+		OnHitPlayerStatusChanged.Broadcast(bHitPlayer);
+	}
+	
+	bHitPlayerLastFrame = bHitPlayer;
+	
 }
 
 void UCombatComponent::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const
@@ -51,6 +87,7 @@ void UCombatComponent::SpawnInventory()
 	if (WeaponsInventory.Num()>0)
 	{
 		EquipWeapon(WeaponsInventory[0]);
+		InitializeWeaponWidget();
 	}
 }
 
@@ -68,12 +105,12 @@ void UCombatComponent::EquipWeapon(AWeapon* Weapon)
 	CurrentWeapon->SetupAttachment();
 }
 
-
-
 void UCombatComponent::OnRep_CurrentWeapon(AWeapon* LastWeapon)
 {
 	if (!IsValid(CurrentWeapon)) return ;
 	CurrentWeapon->SetupAttachment();
+	IPlayerInterface::Execute_WeaponReplicated(GetOwner());
+	InitializeWeaponWidget();
 }
 
 AWeapon* UCombatComponent::SpawnWeapon(const TSubclassOf<AWeapon> Weaponclass) const
@@ -101,7 +138,11 @@ void UCombatComponent::Initiate_ReloadWeapon()
 
 void UCombatComponent::Initiate_FireWeapon_Pressed()
 {
-	Local_Fire();
+	if (!IsValid(CurrentWeapon)) return;
+	if (CurrentWeapon->Ammo>0)
+	{
+		Local_Fire();
+	}
 	bIsPressed=true;
 }
 
@@ -124,27 +165,23 @@ void UCombatComponent::Local_Fire()
 	
 	EPhysicalSurface ImpactSurfaceType=Hit.PhysMaterial.IsValid(false) ? Hit.PhysMaterial->SurfaceType.GetValue() : SurfaceType1;
 	CurrentWeapon->Local_Fire(Hit.ImpactPoint,Hit.ImpactNormal,ImpactSurfaceType,true);
+	OnRoundsChanged.Broadcast(CurrentWeapon->Ammo,CurrentWeapon->MaxCapacity);
 	
 	GetWorld()->GetTimerManager().SetTimer(FireTimer,this,&ThisClass::Timer_AutoFire,CurrentWeapon->FireTime);
 	
 	Sever_Fire(Hit);
 }
 
-void UCombatComponent::Timer_AutoFire()
-{
-	if (!IsValid(CurrentWeapon)) return;
-	if (CurrentWeapon->FireType==EFireType::Auto&&bIsPressed)
-	{
-		Local_Fire();
-	}
-}
-
 void UCombatComponent::Sever_Fire_Implementation(const FHitResult& Hit)
 {
-	NetMulticast_Fire(Hit);
+	if (GetNetMode()!=NM_ListenServer||!Cast<APawn>(GetOwner())->IsLocallyControlled())
+	{
+		CurrentWeapon->Auth_Fire();
+	}
+	NetMulticast_Fire(Hit,CurrentWeapon->Ammo);
 }
 
-void UCombatComponent::NetMulticast_Fire_Implementation(const FHitResult& Hit)
+void UCombatComponent::NetMulticast_Fire_Implementation(const FHitResult& Hit,int32 Auth_Ammo)
 {
 	if (!GetOwner()->HasLocalNetOwner())
 	{
@@ -159,6 +196,28 @@ void UCombatComponent::NetMulticast_Fire_Implementation(const FHitResult& Hit)
 		{
 			Mesh3P->GetAnimInstance()->Montage_Play(FireMontage3P);
 		}
+	}
+	else
+	{
+		CurrentWeapon->Rep_Fire(Auth_Ammo);
+	}
+}
+
+void UCombatComponent::Timer_AutoFire()
+{
+	if (!IsValid(CurrentWeapon)) return;
+	if (CurrentWeapon->FireType==EFireType::Auto&&bIsPressed&&CurrentWeapon->Ammo>0)
+	{
+		Local_Fire();
+	}
+}
+
+void UCombatComponent::InitializeWeaponWidget()
+{
+	if (IsValid(CurrentWeapon))
+	{
+		OnAmmoCounterChanged.Broadcast(CurrentWeapon->GetAmmoCounterInstance(),CurrentWeapon->Ammo,CurrentWeapon->MaxCapacity);
+		OnReticleChanged.Broadcast(CurrentWeapon->GetReticleInstance(),CurrentWeapon->ReticleParams,bHitPlayer);
 	}
 }
 
@@ -182,6 +241,7 @@ void UCombatComponent::Server_Aiming_Implementation(bool Aim)
 void UCombatComponent::Local_Aiming(bool Aim)
 {
 	bAiming=Aim;
+	OnAimingStatusChanged.Broadcast(bAiming);
 }
 
 float UCombatComponent::GetFOV() const

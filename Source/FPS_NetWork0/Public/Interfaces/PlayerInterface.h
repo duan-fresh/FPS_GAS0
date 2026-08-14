@@ -29,4 +29,7 @@ public:
 	
 	UFUNCTION(BlueprintCallable, BlueprintNativeEvent)
 	USkeletalMeshComponent* GetMesh3P() const;
+	
+	UFUNCTION(BlueprintCallable, BlueprintNativeEvent)
+	void WeaponReplicated();
 };

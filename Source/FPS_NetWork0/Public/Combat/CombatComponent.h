@@ -4,15 +4,21 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "Tags/ShooterGameplayTags.h"
+#include "GameFramework/Actor.h"
 #include "CombatComponent.generated.h"
 
-
+class UMaterialInstanceDynamic;
 struct FHitResult;
 class AWeapon;
 class UWeaponData;
 class UDataAsset;
 class UInputAction;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FReticleChanged,UMaterialInstanceDynamic*,ReticleInstanceDynamic,const FReticleParams&,ReticleParams, bool, bCurrentlyTargetingPlayer);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FAmmoCounterChanged,UMaterialInstanceDynamic*,AmmoCounterInstanceDynamic,int32,CurRounds,int32,MaxRounds);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FRoundsChanged,int32,CurRounds,int32,MaxRounds);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAimingStatusChanged, bool, bIsAiming);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FHitPlayerStatusChanged, bool, bIsHitPlayer);
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class FPS_NETWORK0_API UCombatComponent : public UActorComponent
@@ -48,6 +54,24 @@ public:
 	void Initiate_FireWeapon_Released();
 	void Initiate_AimWeapon_Pressed();
 	void Initiate_AimWeapon_Released();
+	
+	UPROPERTY(BlueprintAssignable)
+	FReticleChanged OnReticleChanged;
+	
+	UPROPERTY(BlueprintAssignable)
+	FAmmoCounterChanged OnAmmoCounterChanged;
+	
+	UPROPERTY(BlueprintAssignable)
+	FRoundsChanged OnRoundsChanged;
+	
+	UPROPERTY(BlueprintAssignable)
+	FAimingStatusChanged OnAimingStatusChanged;
+	
+	UPROPERTY(BlueprintAssignable)
+	FHitPlayerStatusChanged OnHitPlayerStatusChanged;
+	
+	UFUNCTION(BlueprintPure)
+	static UCombatComponent* FindCombatComponent(const AActor* Actor){return (IsValid(Actor)?Actor->FindComponentByClass<UCombatComponent>():nullptr);};
 #pragma region Aim
 	UPROPERTY(Replicated,EditDefaultsOnly,BlueprintReadOnly)
 	bool bAiming=false;
@@ -59,7 +83,7 @@ public:
 	
 	UFUNCTION(BlueprintCallable)
 	float GetFOV() const;
-	
+
 #pragma endregion	
 
 	void Local_Fire();
@@ -68,7 +92,7 @@ public:
 	void Sever_Fire(const FHitResult& Hit);
 	
 	UFUNCTION(NetMulticast,Reliable)
-	void NetMulticast_Fire(const FHitResult& Hit);
+	void NetMulticast_Fire(const FHitResult& Hit,int32 Auth_Ammo);
 	
 	UPROPERTY()
 	FTimerHandle FireTimer;
@@ -76,6 +100,8 @@ public:
 	bool bIsPressed;
 	
 	void Timer_AutoFire();
+	
+	void InitializeWeaponWidget();
 protected:
 	
 private:
@@ -93,6 +119,10 @@ private:
 	
 	UPROPERTY(EditDefaultsOnly)
 	float FireRange;
+	
+	bool bHitPlayerLastFrame;
+	
+	bool bHitPlayer;
 };
 
 

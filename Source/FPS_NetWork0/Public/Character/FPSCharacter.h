@@ -11,6 +11,8 @@ class UCameraComponent;
 class USpringArmComponent;
 enum class ETurning: uint8;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWeaponFirstReplicated, AWeapon*,Weapon);
+
 UCLASS()
 class FPS_NETWORK0_API AFPSCharacter : public ACharacter,public IPlayerInterface
 {
@@ -21,13 +23,12 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void PossessedBy(AController* NewController) override;
-	
+	virtual void OnPlayerStateChanged(APlayerState* NewPlayerState, APlayerState* OldPlayerState) override;
 	/*Interface*/
-	FName GetWeaponGripPoint_Implementation(const FGameplayTag& WeaponType) const override;;
-	
-	USkeletalMeshComponent* GetMesh3P_Implementation() const ;
-	
-	USkeletalMeshComponent* GetMesh1P_Implementation() const;
+	virtual FName GetWeaponGripPoint_Implementation(const FGameplayTag& WeaponType) const override;
+	virtual USkeletalMeshComponent* GetMesh3P_Implementation() const override;
+	virtual USkeletalMeshComponent* GetMesh1P_Implementation() const override;
+	virtual void WeaponReplicated_Implementation()override;
 	/*Interface*/
 	
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="FPS|Combat")
@@ -50,6 +51,12 @@ public:
 	
 	UFUNCTION(BlueprintCallable)
 	bool HasCurrentWeapon()const;
+	
+	UFUNCTION(BlueprintCallable)
+	bool HasWeaponFirstReplicated() const; 
+	
+	UPROPERTY(BlueprintAssignable)
+	FWeaponFirstReplicated OnWeaponFirstReplicated;
 	
 #pragma region TurnAim
 	UPROPERTY(BlueprintReadOnly)
@@ -113,4 +120,5 @@ private:
 	UFUNCTION()
 	void TurnToMovement(float DeltaTime);
 	
+	bool bWeaponFirstReplicated;
 };

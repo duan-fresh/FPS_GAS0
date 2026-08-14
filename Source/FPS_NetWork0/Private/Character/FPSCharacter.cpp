@@ -49,6 +49,7 @@ AFPSCharacter::AFPSCharacter()
 	CombatComponent->SetIsReplicated(true);
 	
 	DefaultFieldOfView=90.0f;
+	bWeaponFirstReplicated=false;
 }
 
 FRotator AFPSCharacter::GetFixedAimRotation() const
@@ -66,6 +67,11 @@ FRotator AFPSCharacter::GetFixedAimRotation() const
 bool AFPSCharacter::HasCurrentWeapon() const
 {
 	return IsValid(CombatComponent)&&CombatComponent->CurrentWeapon!=nullptr;
+}
+
+bool AFPSCharacter::HasWeaponFirstReplicated() const
+{
+	return bWeaponFirstReplicated;
 }
 
 void AFPSCharacter::BeginPlay()
@@ -181,6 +187,15 @@ void AFPSCharacter::PossessedBy(AController* NewController)
 	}
 }
 
+void AFPSCharacter::OnPlayerStateChanged(APlayerState* NewPlayerState, APlayerState* OldPlayerState)
+{
+	Super::OnPlayerStateChanged(NewPlayerState, OldPlayerState);
+	if (IsValid(CombatComponent))
+	{
+		CombatComponent->InitializeWeaponWidget();
+	}
+}
+
 FName AFPSCharacter::GetWeaponGripPoint_Implementation(const FGameplayTag& WeaponType) const
 {
 	checkf(CombatComponent->WeaponDataAsset,TEXT("Fill out WeaponDataAsset!"));
@@ -195,6 +210,15 @@ USkeletalMeshComponent* AFPSCharacter::GetMesh3P_Implementation() const
 USkeletalMeshComponent* AFPSCharacter::GetMesh1P_Implementation() const
 {
 	return Mesh1P;
+}
+
+void AFPSCharacter::WeaponReplicated_Implementation()
+{
+	if (!bWeaponFirstReplicated)
+	{
+		bWeaponFirstReplicated=true;
+		OnWeaponFirstReplicated.Broadcast(CombatComponent->CurrentWeapon);
+	}
 }
 
 
