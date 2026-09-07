@@ -35,16 +35,12 @@ AWeapon::AWeapon()
 	
 	TraceRadius=5.0f;
 	FireTime=0.1f;
+	Damage = 15.f;
 	Ammo=10;
 	StartingAmmo=5;
 	MaxCapacity=10;
 	Sequence=0;
-}
-
-void AWeapon::OnRep_Instigator()
-{
-	Super::OnRep_Instigator();
-	SetupAttachment();
+	WeaponStatus = EWeaponStatus::Idle;
 }
 
 void AWeapon::BeginPlay()
@@ -52,16 +48,24 @@ void AWeapon::BeginPlay()
 	Super::BeginPlay();
 }
 
-void AWeapon::SetupAttachment()
+void AWeapon::SetupAttachment(APawn* Pawn)
 {
-	ACharacter* WeaponOwner = Cast<ACharacter>(GetOwner());
-	if (!IsValid(WeaponOwner)||!WeaponOwner->Implements<UPlayerInterface>()) return;
-	SetupVisibility(WeaponOwner);
-	const FName GripPoint=IPlayerInterface::Execute_GetWeaponGripPoint(WeaponOwner,WeaponType);
-	USkeletalMeshComponent* OwnerMesh1P=IPlayerInterface::Execute_GetMesh1P(WeaponOwner);
-	USkeletalMeshComponent* OwnerMesh3P=IPlayerInterface::Execute_GetMesh3P(WeaponOwner);
+	if (!IsValid(Pawn)||!Pawn->Implements<UPlayerInterface>()) return;
+	SetupVisibility(Pawn);
+	const FName GripPoint=IPlayerInterface::Execute_GetWeaponGripPoint(Pawn,WeaponType);
+	USkeletalMeshComponent* OwnerMesh1P=IPlayerInterface::Execute_GetMesh1P(Pawn);
+	USkeletalMeshComponent* OwnerMesh3P=IPlayerInterface::Execute_GetMesh3P(Pawn);
 	Mesh1P->AttachToComponent(OwnerMesh1P,FAttachmentTransformRules::KeepRelativeTransform,GripPoint);
 	Mesh3P->AttachToComponent(OwnerMesh3P,FAttachmentTransformRules::KeepRelativeTransform,GripPoint);
+}
+
+void AWeapon::DetachFromOwningPawn()
+{
+	Mesh1P->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+	Mesh1P->SetHiddenInGame(true);
+	
+	Mesh3P->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
+	Mesh3P->SetHiddenInGame(true);
 }
 
 void AWeapon::SetupVisibility(const APawn* OwningPawn) const
@@ -150,7 +154,10 @@ void AWeapon::Local_Fire(const FVector& ImpactPoint, const FVector& ImpactNormal
 	if (GetInstigator()->IsLocallyControlled())
 	{
 		Ammo=FMath::Clamp(Ammo-1,0,MaxCapacity);
-		Sequence++;
+		if (!GetInstigator()->HasAuthority())
+		{
+			++Sequence;
+		}
 	}
 }
 
@@ -161,10 +168,11 @@ void AWeapon::Auth_Fire()
 
 void AWeapon::Rep_Fire(int Auth_Ammo)
 {
-	if (GetInstigator()->IsLocallyControlled())
+	if (GetInstigator()->IsLocallyControlled()&&!GetInstigator()->HasAuthority())
 	{
-		--Sequence;
-		Ammo=FMath::Clamp(Auth_Ammo-Sequence,0,MaxCapacity);
+		Ammo = Auth_Ammo;
+        --Sequence;
+        Ammo -= Sequence;
 	}
 }
 

@@ -43,17 +43,16 @@ private:
 	void OnPossessedPawnChanged(APawn* OldPawn, APawn* NewPawn);
 	
 	UFUNCTION()
-	void OnWeaponFirstReplicated(AWeapon* Weapon);
+	void OnWeaponFirstReplicated(AWeapon* Weapon, bool bIsTargetingPlayer);
 	
 	UFUNCTION()
-	void OnAmmoCounterChanged(UMaterialInstanceDynamic* AmmoCounterInstanceDynamic, int32 CurRounds,
-	int32 MaxRounds);
+	void OnAmmoCounterChanged(UMaterialInstanceDynamic* AmmoCounterInstanceDynamic, int32 CurRounds,int32 MaxRounds);
 	
 	UFUNCTION()
 	void OnReticleChanged(UMaterialInstanceDynamic* ReticleInstanceDynamic,const FReticleParams& ReticleParams,bool bCurrentlyTargetingPlayer);
 	
 	UFUNCTION()
-	void OnRoundsChanged(int32 CurRounds,int32 MaxRounds);
+	void OnRoundsChanged(int32 CurRounds,int32 MaxRounds, int32 RoundsInReserve);
 	
 	UFUNCTION()
 	void OnAimingStatusChanged(bool bIsAiming);

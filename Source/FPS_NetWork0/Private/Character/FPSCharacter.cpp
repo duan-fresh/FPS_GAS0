@@ -1,18 +1,29 @@
 #include "Character/FPSCharacter.h"
 
 #include "EnhancedInputComponent.h"
+#include "TimerManager.h"
 #include "VectorTypes.h"
+#include "Animation/AnimInstance.h"
 #include "Camera/CameraComponent.h"
 #include "Combat/CombatComponent.h"
+#include "Combat/EliminationComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Data/WeaponData.h"
+#include "FPS_NetWork0/FPS_NetWork0.h"
+#include "Game/FPSGameMode.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Health/HealthComponent.h"
+#include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Math/UnitConversion.h"
+#include "Player/FPS_Controller.h"
 #include "ShooterTypes/ShooterTypes.h"
 #include "Weapon/Weapon.h"
 
+
+class AFPSGameMode;
 
 AFPSCharacter::AFPSCharacter()
 {
@@ -48,8 +59,21 @@ AFPSCharacter::AFPSCharacter()
 	CombatComponent=CreateDefaultSubobject<UCombatComponent>("CombatComponent");
 	CombatComponent->SetIsReplicated(true);
 	
+	Health = CreateDefaultSubobject<UHealthComponent>("Health");
+	Health->SetIsReplicated(true);
+	Health->OnDeathStarted.AddDynamic(this, &ThisClass::OnDeathStarted);//在客户端与服务器的Actor都会执行死亡逻辑
+	
+	Elimination = CreateDefaultSubobject<UEliminationComponent>("Elimination");
+	Elimination->SetIsReplicated(false);
+	
+	if (HasAuthority())//只有服务器才可以进行权威数据的管理
+	{
+		CombatComponent->OnRoundReported.AddDynamic(Elimination, &UEliminationComponent::OnRoundReported);
+	}
+	
 	DefaultFieldOfView=90.0f;
 	bWeaponFirstReplicated=false;
+	RespawnTime = 3.f;
 }
 
 FRotator AFPSCharacter::GetFixedAimRotation() const
@@ -93,6 +117,41 @@ void AFPSCharacter::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 	CalculateFABRIK_SocketTransform();
 	CalculateTurnParameters(DeltaTime);
+}
+
+//死亡在客户端和服务器端都进行的函数
+void AFPSCharacter::OnDeathStarted()
+{
+	if (HasAuthority())
+	{
+		CombatComponent->DestoryInventory();
+		GetWorld()->GetTimerManager().SetTimer(DeathTimer, this, &ThisClass::DeathTimerFinished, RespawnTime);
+	}
+	if (GetNetMode() != NM_DedicatedServer)
+	{
+		DeathEffects();
+		if (AFPS_Controller* PC = Cast<AFPS_Controller>(GetController()); IsValid(PC))
+		{
+			DisableInput(PC);
+			if (PC->IsLocalController())
+			{
+				PC->bPawnAlive = false;
+			}
+		}
+	}
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+	GetCapsuleComponent()->SetCollisionResponseToChannel(FPSTraceChannels::ECC_Weapon, ECR_Ignore);
+	GetMesh()->SetCollisionResponseToChannel(FPSTraceChannels::ECC_Weapon, ECR_Ignore);
+}
+
+
+void AFPSCharacter::DeathTimerFinished()
+{
+	AFPSGameMode* GM = Cast<AFPSGameMode>(UGameplayStatics::GetGameMode(this));
+	if (IsValid(GM))
+	{
+		GM->RequestRespawn(this, GetController());
+	}
 }
 
 void AFPSCharacter::CalculateFABRIK_SocketTransform()
@@ -185,6 +244,10 @@ void AFPSCharacter::PossessedBy(AController* NewController)
 	{
 		CombatComponent->SpawnInventory();
 	}
+	if (AFPS_Controller* PC = Cast<AFPS_Controller>(NewController); IsValid(PC))
+	{
+		PC->bPawnAlive = true;
+	}
 }
 
 void AFPSCharacter::OnPlayerStateChanged(APlayerState* NewPlayerState, APlayerState* OldPlayerState)
@@ -193,6 +256,10 @@ void AFPSCharacter::OnPlayerStateChanged(APlayerState* NewPlayerState, APlayerSt
 	if (IsValid(CombatComponent))
 	{
 		CombatComponent->InitializeWeaponWidget();
+	}
+	if (AFPS_Controller* PC = Cast<AFPS_Controller>(GetController()); IsValid(PC))
+	{
+		PC->bPawnAlive = true;
 	}
 }
 
@@ -217,10 +284,62 @@ void AFPSCharacter::WeaponReplicated_Implementation()
 	if (!bWeaponFirstReplicated)
 	{
 		bWeaponFirstReplicated=true;
-		OnWeaponFirstReplicated.Broadcast(CombatComponent->CurrentWeapon);
+		OnWeaponFirstReplicated.Broadcast(CombatComponent->CurrentWeapon, CombatComponent->bHitPlayer);
 	}
 }
 
+AWeapon* AFPSCharacter::GetCurrentWeapon_Implementation()
+{
+	return CombatComponent->CurrentWeapon;
+}
+
+int32 AFPSCharacter::GetReserveAmmo_Implementation() const
+{
+	return CombatComponent->CurrentReserveAmmo;
+}
+
+void AFPSCharacter::Notify_CycleWeapon_Implementation()
+{
+	CombatComponent->Notify_CycleWeapon();
+}
+
+void AFPSCharacter::Notify_ReloadWeapon_Implementation()
+{
+	CombatComponent->Notify_ReloadWeapon();
+}
+
+void AFPSCharacter::AddAmmo_Implementation(const FGameplayTag& WeaponType, int32 AmmoAmount)
+{
+	if (HasAuthority() && IsValid(CombatComponent))
+	{
+		CombatComponent->AddAmmo(WeaponType, AmmoAmount);
+	}
+}
+
+bool AFPSCharacter::DoDamage_Implementation(float DamageAmount, AActor* DamageInstigator)
+{
+	if (!IsValid(Health)) return false;
+
+	if (Health->ChangeHealthByAmount(-DamageAmount, DamageInstigator))
+	{
+		return true; 
+	}
+	
+	const int32 MontageSelection = FMath::RandRange(0, HitReacts.Num() - 1);
+	Multicast_HitReact(MontageSelection);
+	return false;
+}
+
+void AFPSCharacter::Multicast_HitReact_Implementation(int32 MontageIndex)
+{
+	if (GetNetMode() != NM_DedicatedServer && !IsLocallyControlled())
+	{
+		if (HitReacts.IsValidIndex(MontageIndex))
+		{
+			GetMesh()->GetAnimInstance()->Montage_Play(HitReacts[MontageIndex]);
+		}
+	}
+}
 
 void AFPSCharacter::Input_FireWeapon_Pressed()
 {
@@ -253,6 +372,8 @@ void AFPSCharacter::Input_ReloadWeapon()
 {
 	CombatComponent->Initiate_ReloadWeapon();
 }
+
+
 
 
 

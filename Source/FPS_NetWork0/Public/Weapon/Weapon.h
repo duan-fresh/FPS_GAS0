@@ -18,6 +18,16 @@ enum class EFireType : uint8
 	SemiAuto UMETA(DisplayName="SemiAuto firing"),
 };
 
+UENUM(BlueprintType)
+enum class EWeaponStatus : uint8
+{
+	Idle,		// Weapon doing nothing, can fire/reload/cycle
+	Firing,		// Currently firing, can't reload/cycle
+	Reloading,	// Currently reloading, can't fire/cycle
+	Cycling,	// Currently cycling to the next weapon, can't fire/reload/cycle
+	Unequipped	// On our person, but can't do anything
+};
+
 
 
 UCLASS()
@@ -28,9 +38,8 @@ class FPS_NETWORK0_API AWeapon : public AActor
 public:
 	AWeapon();
 	
-	virtual void OnRep_Instigator() override;
-	
-	void SetupAttachment();
+	void SetupAttachment(APawn* Pawn);
+	void DetachFromOwningPawn();
 	
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="FPS|WeaponType")
 	FGameplayTag WeaponType;
@@ -58,6 +67,9 @@ public:
 	UPROPERTY(EditAnywhere)
 	float FireTime;
 	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Damage")
+	float Damage;
+	
 	UPROPERTY(EditAnywhere,Category="FPS")
 	int Ammo;
 	
@@ -70,6 +82,10 @@ public:
 	UPROPERTY(EditAnywhere,Category="FPS")
 	FReticleParams ReticleParams;
 	
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Icon")
+	TObjectPtr<UMaterialInterface> WeaponIcon;
+	
+	EWeaponStatus WeaponStatus;
 protected:
 	virtual void BeginPlay() override;
 

@@ -11,6 +11,8 @@ class UInputMappingContext;
 struct FInputActionValue;
 class UInputAction;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FPlayerStateReplicated);
+
 UCLASS()
 class FPS_NETWORK0_API AFPS_Controller : public APlayerController
 {
@@ -21,9 +23,15 @@ public:
 	virtual void BeginPlay() override;
 	
 	virtual void SetupInputComponent() override;
+	
+	UPROPERTY(BlueprintAssignable)
+	FPlayerStateReplicated OnPlayerStateReplicated;
+	
+	virtual void OnRep_PlayerState() override;
+	
+	bool bPawnAlive;
+
 private:
-	
-	
 	UPROPERTY(EditAnywhere,Category="FPS|Input")
 	TObjectPtr<UInputMappingContext> FPSIMC;
 	

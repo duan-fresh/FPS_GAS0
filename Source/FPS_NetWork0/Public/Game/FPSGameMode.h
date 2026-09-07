@@ -13,4 +13,7 @@ UCLASS()
 class FPS_NETWORK0_API AFPSGameMode : public AGameModeBase
 {
 	GENERATED_BODY()
+public:
+	
+	void RequestRespawn(ACharacter* Character, AController* Controller);
 };

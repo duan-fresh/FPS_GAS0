@@ -5,13 +5,15 @@
 #include "Interfaces/PlayerInterface.h"
 #include "FPSCharacter.generated.h"
 
+class UEliminationComponent;
+class UHealthComponent;
 class UCombatComponent;
 class UInputAction;
 class UCameraComponent;
 class USpringArmComponent;
 enum class ETurning: uint8;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWeaponFirstReplicated, AWeapon*,Weapon);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FWeaponFirstReplicated, AWeapon*,Weapon, bool, bTargetingPlayer);
 
 UCLASS()
 class FPS_NETWORK0_API AFPSCharacter : public ACharacter,public IPlayerInterface
@@ -29,10 +31,22 @@ public:
 	virtual USkeletalMeshComponent* GetMesh3P_Implementation() const override;
 	virtual USkeletalMeshComponent* GetMesh1P_Implementation() const override;
 	virtual void WeaponReplicated_Implementation()override;
+	virtual AWeapon* GetCurrentWeapon_Implementation() override;
+	virtual int32 GetReserveAmmo_Implementation() const override;
+	virtual void Notify_CycleWeapon_Implementation() override;
+	virtual void Notify_ReloadWeapon_Implementation() override;
+	virtual void AddAmmo_Implementation(const FGameplayTag& WeaponType, int32 AmmoAmount) override;
+	virtual bool DoDamage_Implementation(float DamageAmount, AActor* DamageInstigator) override;
 	/*Interface*/
 	
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="FPS|Combat")
 	TObjectPtr<UCombatComponent> CombatComponent;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Elimination")
+	TObjectPtr<UEliminationComponent> Elimination;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Health")
+	TObjectPtr<UHealthComponent> Health;
 	
 	UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="FPS|Camera")
 	float DefaultFieldOfView;
@@ -75,14 +89,31 @@ public:
 	ETurning TurningState;
 
 #pragma endregion
+	
+#pragma region Death
+	UFUNCTION()
+	void OnDeathStarted();
+	
+	UFUNCTION(BlueprintImplementableEvent)
+	void DeathEffects();
+	
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|Respawn")
+	float RespawnTime;
+#pragma endregion Death
+	
 protected:
 	virtual void BeginPlay() override;
 	
 	virtual void BeginDestroy() override;
-private:
-	UPROPERTY(EditAnywhere)
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "FPS|Mesh")
 	TObjectPtr<USkeletalMeshComponent> Mesh1P;
 	
+	FTimerHandle DeathTimer;
+	
+	void DeathTimerFinished();
+	
+private:
 	UPROPERTY(EditAnywhere)
 	TObjectPtr<USpringArmComponent> SpringArm1P;
 	
@@ -121,4 +152,13 @@ private:
 	void TurnToMovement(float DeltaTime);
 	
 	bool bWeaponFirstReplicated;
+	
+#pragma region HitReact
+	UPROPERTY(EditDefaultsOnly, Category = "FPS|HitReact")
+	TArray<TObjectPtr<UAnimMontage>> HitReacts;
+	
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_HitReact(int32 MontageIndex);
+#pragma endregion HitReact
+	
 };

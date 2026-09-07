@@ -37,10 +37,13 @@ void UShooterReticle::NativeOnInitialized()
 	if (!IsValid(FPSCharacter)) return;
 	OnPossessedPawnChanged(nullptr,FPSCharacter);
 	
+	UCombatComponent* Combat = UCombatComponent::FindCombatComponent(FPSCharacter);
+	if (!IsValid(Combat)) return;
+	
 	if (FPSCharacter->HasCurrentWeapon())
 	{
 		AWeapon* Weapon=FPSCharacter->CombatComponent->CurrentWeapon;
-		OnReticleChanged(Weapon->GetReticleInstance(),Weapon->ReticleParams,false);
+		OnReticleChanged(Weapon->GetReticleInstance(),Weapon->ReticleParams,Combat->bHitPlayer);
 		OnAmmoCounterChanged(Weapon->GetAmmoCounterInstance(),Weapon->Ammo,Weapon->MaxCapacity);
 	}
 	else
@@ -50,7 +53,7 @@ void UShooterReticle::NativeOnInitialized()
 	if (FPSCharacter->HasAuthority())
 	{
 		AWeapon* Weapon=FPSCharacter->CombatComponent->CurrentWeapon;
-		OnReticleChanged(Weapon->GetReticleInstance(),Weapon->ReticleParams,false);
+		OnReticleChanged(Weapon->GetReticleInstance(),Weapon->ReticleParams,Combat->bHitPlayer);
 		OnAmmoCounterChanged(Weapon->GetAmmoCounterInstance(),Weapon->Ammo,Weapon->MaxCapacity);
 	}
 }
@@ -100,9 +103,9 @@ void UShooterReticle::OnPossessedPawnChanged(APawn* OldPawn, APawn* NewPawn)
 	}
 }
 
-void UShooterReticle::OnWeaponFirstReplicated(AWeapon* Weapon)
+void UShooterReticle::OnWeaponFirstReplicated(AWeapon* Weapon, bool bIsTargetingPlayer)
 {
-	OnReticleChanged(Weapon->GetReticleInstance(),Weapon->ReticleParams,false);
+	OnReticleChanged(Weapon->GetReticleInstance(),Weapon->ReticleParams,bIsTargetingPlayer);
 	OnAmmoCounterChanged(Weapon->GetAmmoCounterInstance(),Weapon->Ammo,Weapon->MaxCapacity);
 }
 
@@ -134,7 +137,7 @@ void UShooterReticle::OnAmmoCounterChanged(UMaterialInstanceDynamic* AmmoCounter
 	}
 }
 
-void UShooterReticle::OnRoundsChanged(int32 CurRounds, int32 MaxRounds)
+void UShooterReticle::OnRoundsChanged(int32 CurRounds, int32 MaxRounds, int32 RoundsInReserve)
 {
 	_BaseCornerScaleFactor_RoundFired+=CurrentReticleParams.ScaleFactor_RoundFired;
 	_BaseShapeCutFactor_RoundFired+=CurrentReticleParams.RoundFiredInterpSpeed;
