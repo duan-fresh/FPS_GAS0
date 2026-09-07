@@ -4,6 +4,7 @@
 #include "TimerManager.h"
 #include "Blueprint/UserWidget.h"
 #include "Data/SpecialElimData.h"
+#include "GameFramework/PlayerController.h"
 #include "UI/SpecialElim.h"
 
 AFPSPlayerState::AFPSPlayerState()
@@ -136,14 +137,23 @@ void AFPSPlayerState::Client_ScoredElim_Implementation(int32 ElimScore)
 void AFPSPlayerState::Client_SpecialElim_Implementation(const ESpecialElimType& SpecialElim, int32 SequentialElimCount,
 	int32 StreakCount, int32 ElimScore)
 {
-	ensure(IsValid(SpecialElimData));
+	if (!IsValid(SpecialElimData))
+	{
+		return;
+	}
 	
 	OnScoreChanged.Broadcast(ElimScore);
 	
 	TArray<ESpecialElimType> ElimTypes = DecodeElimBitmask(SpecialElim);
 	for (ESpecialElimType ElimType : ElimTypes)
 	{
-		FSpecialElimInfo& ElimMessageInfo = SpecialElimData->SpecialElimInfo.FindChecked(ElimType);
+		const FSpecialElimInfo* TemplateElimMessageInfo = SpecialElimData->SpecialElimInfo.Find(ElimType);
+		if (!TemplateElimMessageInfo)
+		{
+			continue;
+		}
+
+		FSpecialElimInfo ElimMessageInfo = *TemplateElimMessageInfo;
 		if (ElimType == ESpecialElimType::Sequential)
 		{
 			ElimMessageInfo.SequentialElimCount = SequentialElimCount;
@@ -153,7 +163,6 @@ void AFPSPlayerState::Client_SpecialElim_Implementation(const ESpecialElimType& 
 			ElimMessageInfo.StreakCount = StreakCount;
 		}
 		ElimMessageInfo.ElimType = ElimType;
-		// FIFO - First-in, First-out - Queue
 		SpecialElimQueue.Enqueue(ElimMessageInfo);
 	}
 	if (!bIsProcessingQueue)
@@ -194,14 +203,26 @@ void AFPSPlayerState::ShowSpecialElim(const FSpecialElimInfo& ElimMessageInfo)
 	}
 	if (ElimMessageInfo.ElimType == ESpecialElimType::Streak) ElimMessageString = FString::Printf(TEXT("Streak x%d!"), ElimMessageInfo.StreakCount);
 
-	if (IsValid(SpecialElimWidgetClass))
+	if (!IsValid(SpecialElimWidgetClass))
 	{
-		USpecialElim* ElimWidget = CreateWidget<USpecialElim>(GetPlayerController(), SpecialElimWidgetClass);
-		if (IsValid(ElimWidget))
-		{
-			ElimWidget->InitializeWidget(ElimMessageString, ElimMessageInfo.ElimIcon);
-			ElimWidget->AddToViewport();
-		}
+		return;
+	}
+
+	APlayerController* OwningPlayerController = GetPlayerController();
+	if (!IsValid(OwningPlayerController) && IsValid(GetWorld()))
+	{
+		OwningPlayerController = GetWorld()->GetFirstPlayerController();
+	}
+	if (!IsValid(OwningPlayerController))
+	{
+		return;
+	}
+
+	USpecialElim* ElimWidget = CreateWidget<USpecialElim>(OwningPlayerController, SpecialElimWidgetClass);
+	if (IsValid(ElimWidget))
+	{
+		ElimWidget->InitializeWidget(ElimMessageString, ElimMessageInfo.ElimIcon);
+		ElimWidget->AddToViewport();
 	}
 }
 

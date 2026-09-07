@@ -66,11 +66,6 @@ AFPSCharacter::AFPSCharacter()
 	Elimination = CreateDefaultSubobject<UEliminationComponent>("Elimination");
 	Elimination->SetIsReplicated(false);
 	
-	if (HasAuthority())//只有服务器才可以进行权威数据的管理
-	{
-		CombatComponent->OnRoundReported.AddDynamic(Elimination, &UEliminationComponent::OnRoundReported);
-	}
-	
 	DefaultFieldOfView=90.0f;
 	bWeaponFirstReplicated=false;
 	RespawnTime = 3.f;
@@ -103,6 +98,11 @@ void AFPSCharacter::BeginPlay()
 	Super::BeginPlay();
 	Camera1P->SetFieldOfView(DefaultFieldOfView);
 	StartingAimRotation=FRotator(0.0f,GetBaseAimRotation().Pitch,0.0f);
+	
+	if (HasAuthority())//只有服务器才可以进行权威数据的管理，，？？Warning：错误要放在BeginPlay中
+	{
+		CombatComponent->OnRoundReported.AddUniqueDynamic(Elimination, &UEliminationComponent::OnRoundReported);
+	}
 }
 
 void AFPSCharacter::BeginDestroy()

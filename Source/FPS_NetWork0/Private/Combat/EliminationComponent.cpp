@@ -16,6 +16,8 @@ UEliminationComponent::UEliminationComponent()
 	SequentialElimInterval = 2.f;
 	LastElimTime = 0.f;
 	SequentialElims = 0;
+	Streak = 0;
+	ElimsNeededForStreak = 5;
 }
 
 void UEliminationComponent::OnRoundReported(AActor* Attacker, AActor* Victim, bool bHit, bool bHeadShot, bool bLethal)
@@ -56,6 +58,7 @@ void UEliminationComponent::ProcessElimination(bool bHeadShot, AFPSPlayerState* 
 	ESpecialElimType SpecialElimType{};
 	ProcessHeadshot(bHeadShot,SpecialElimType,AttackerPS);
 	ProcessSequentialEliminations(SpecialElimType, AttackerPS);
+	ProcessStreaks(SpecialElimType, AttackerPS, VictimPS);
 	
 	AFPSGameState* GameState = Cast<AFPSGameState>(UGameplayStatics::GetGameState(AttackerPS));
 	if (IsValid(GameState))
