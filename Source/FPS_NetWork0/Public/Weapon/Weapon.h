@@ -69,6 +69,22 @@ public:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Damage")
 	float Damage;
+
+	//Modify//
+	// ---------------- 额外受击持续扣血（DoT）----------------
+	// 命中后由 UCombatComponent::Sever_Fire 施加到目标身上（见 Private/Combat/CombatComponent.cpp）。
+	// 留空 = 这把枪没有持续伤害效果。
+	// 挂 BP_GE_Burn 就是"燃烧弹步枪"，以后复制一把换 BP_GE_Poison 就是中毒弹 ——
+	// 不同 GE 类之间天然叠加，同一把枪重复命中只刷新时长。
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Damage")
+	TSubclassOf<class UGameplayEffect> DoTEffect;
+
+	// 每一跳的伤害（填正数，施加时会取负）。默认 3.0：
+	// 配合 BP_GE_Burn 的 5 秒时长 / 0.5 秒一跳 = 10 跳，合计 30 点，约等于两发子弹。
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FPS|Damage",
+		meta = (ClampMin = "0.0", EditCondition = "DoTEffect != nullptr"))
+	float DoTDamagePerTick = 3.0f;
+	//Modify//
 	
 	UPROPERTY(EditAnywhere,Category="FPS")
 	int Ammo;

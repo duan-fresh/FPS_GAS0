@@ -16,6 +16,8 @@ public class FPS_NetWork0 : ModuleRules
 			"InputCore", 
 			"EnhancedInput",
 			"GameplayTags",
+			"GameplayTasks",
+			"GameplayAbilities",
 			"PhysicsCore",
 			"Slate",
 			"UMG",

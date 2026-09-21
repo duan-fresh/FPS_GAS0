@@ -3,6 +3,12 @@
 
 #include "Combat/CombatComponent.h"
 
+//Modify//
+#include "AbilitySystemBlueprintLibrary.h"
+#include "AbilitySystemComponent.h"
+#include "GameplayEffect.h"
+#include "Tags/ShooterGameplayTags.h"
+//Modify//
 #include "EditorCategoryUtils.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
@@ -437,6 +443,41 @@ void UCombatComponent::Sever_Fire_Implementation(const FHitResult& Hit)
 	if (bHit)
 	{
 		bLethal = IPlayerInterface::Execute_DoDamage(Hit.GetActor(), CurrentWeapon->Damage, GetOwner());
+
+		//Modify//
+		// ---------------- 额外受击持续扣血（DoT）----------------
+		// 放在 DoDamage 之后：本帧的直击伤害已经结算完，才挂上持续伤害。
+		// 用【攻击者的 ASC】作为 Source 是刻意的 —— BP_GE_Burn 的叠加策略是
+		// AggregateBySource + StackLimitCount=1，所以同一把枪反复命中只会刷新持续时间，
+		// 而不同武器 / 不同 GE 类之间才会各自跳各自的伤害。
+		if (!bLethal && IsValid(CurrentWeapon->DoTEffect))
+		{
+			UAbilitySystemComponent* SourceASC =
+				UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(GetOwner());
+			UAbilitySystemComponent* TargetASC =
+				UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Hit.GetActor());
+
+			if (IsValid(SourceASC) && IsValid(TargetASC))
+			{
+				FGameplayEffectContextHandle EffectContext = SourceASC->MakeEffectContext();
+				// 记录谁打的、用什么打的（供以后做击杀提示 / 伤害来源显示时取用）
+				EffectContext.AddInstigator(GetOwner(), CurrentWeapon);
+
+				FGameplayEffectSpecHandle DoTSpec =
+					SourceASC->MakeOutgoingSpec(CurrentWeapon->DoTEffect, 1.f, EffectContext);
+
+				if (DoTSpec.IsValid())
+				{
+					// 约定：SetByCaller 一律传【负值】，与子弹直击的 UFPSDamageEffect 保持一致。
+					// 每跳伤害取负后写进 IncomingDamage，仍由 UFPSAttributeSet 统一"先扣盾再扣血"。
+					DoTSpec = UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
+						DoTSpec, FPSTags::TAG_Data_Damage_Fire.GetTag(), -CurrentWeapon->DoTDamagePerTick);
+
+					SourceASC->ApplyGameplayEffectSpecToTarget(*DoTSpec.Data.Get(), TargetASC);
+				}
+			}
+		}
+		//Modify//
 	}
 	OnRoundReported.Broadcast(GetOwner(), Hit.GetActor(), bHit, bHeadShot, bLethal);
 	

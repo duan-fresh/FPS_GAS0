@@ -22,6 +22,15 @@
 #include "ShooterTypes/ShooterTypes.h"
 #include "Weapon/Weapon.h"
 
+//Modify//
+#include "AbilitySystemBlueprintLibrary.h"
+#include "AbilitySystemComponent.h"
+#include "AbilitySystem/FPSAttributeSet.h"
+#include "GameplayEffect.h"
+#include "Player/FPSPlayerState.h"
+#include "Tags/ShooterGameplayTags.h"
+//Modify//
+
 
 class AFPSGameMode;
 
@@ -126,6 +135,18 @@ void AFPSCharacter::OnDeathStarted()
 	{
 		CombatComponent->DestoryInventory();
 		GetWorld()->GetTimerManager().SetTimer(DeathTimer, this, &ThisClass::DeathTimerFinished, RespawnTime);
+
+		//Modify//
+		// 打上 State.Dead 标签（LooseGameplayTag，不占 GE 槽位）：
+		//   - UFPSDamageOverTimeEffect 的 ApplicationTagRequirements 靠它挡住"对尸体挂 DoT"；
+		//   - 同一 GE 的 OngoingTagRequirements 靠它让"目标死亡瞬间停止跳数"，
+		//     所以不需要额外写一段"遍历并移除所有 DoT"的代码。
+		// 重生时在 InitializeAbilitySystem() 里移除。
+		if (UAbilitySystemComponent* AbilitySystemComponent = GetAbilitySystemComponent())
+		{
+			AbilitySystemComponent->AddLooseGameplayTag(FPSTags::TAG_State_Dead.GetTag());
+		}
+		//Modify//
 	}
 	if (GetNetMode() != NM_DedicatedServer)
 	{
@@ -235,6 +256,12 @@ void AFPSCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompon
 	EnhancedInputComponent->BindAction(IA_FireWeapon,ETriggerEvent::Completed,this,&AFPSCharacter::Input_FireWeapon_Released);
 	EnhancedInputComponent->BindAction(IA_CycleWeapon,ETriggerEvent::Started,this,&AFPSCharacter::Input_CycleWeapon);
 	EnhancedInputComponent->BindAction(IA_ReloadWeapon,ETriggerEvent::Started,this,&AFPSCharacter::Input_ReloadWeapon);
+
+	//Modify//
+	// 烟雾弹：沿用工程现有的"输入绑在角色上"的风格（Q10 的既定方案），
+	// 不用参考工程那套"Controller + TryActivateAbilitiesByTag"的做法，避免两种风格并存。
+	EnhancedInputComponent->BindAction(IA_Smoke,ETriggerEvent::Started,this,&AFPSCharacter::Input_Smoke);
+	//Modify//
 }
 
 void AFPSCharacter::PossessedBy(AController* NewController)
@@ -248,6 +275,12 @@ void AFPSCharacter::PossessedBy(AController* NewController)
 	{
 		PC->bPawnAlive = true;
 	}
+
+	//Modify//
+	// 服务器侧初始化：Owner = PlayerState，Avatar = 本角色。
+	// 客户端侧走下面的 OnPlayerStateChanged（PlayerState 复制到客户端时才会触发）。
+	InitializeAbilitySystem();
+	//Modify//
 }
 
 void AFPSCharacter::OnPlayerStateChanged(APlayerState* NewPlayerState, APlayerState* OldPlayerState)
@@ -261,7 +294,80 @@ void AFPSCharacter::OnPlayerStateChanged(APlayerState* NewPlayerState, APlayerSt
 	{
 		PC->bPawnAlive = true;
 	}
+
+	//Modify//
+	// 客户端侧初始化。服务器上本函数也会被调到，重复执行无害：
+	//   InitAbilityActorInfo 是幂等的；EnsureStartupState 内部有 HasAuthority + 一次性标记。
+	InitializeAbilitySystem();
+	//Modify//
 }
+
+//Modify//
+UAbilitySystemComponent* AFPSCharacter::GetAbilitySystemComponent() const
+{
+	// ASC 挂在 PlayerState 上（跨死亡重生保留），这里只做转发。
+	if (const AFPSPlayerState* FPSPlayerState = GetPlayerState<AFPSPlayerState>())
+	{
+		return FPSPlayerState->GetAbilitySystemComponent();
+	}
+	return nullptr;
+}
+
+void AFPSCharacter::InitializeAbilitySystem()
+{
+	AFPSPlayerState* FPSPlayerState = GetPlayerState<AFPSPlayerState>();
+	if (!IsValid(FPSPlayerState))
+	{
+		return;
+	}
+
+	UAbilitySystemComponent* AbilitySystemComponent = FPSPlayerState->GetAbilitySystemComponent();
+	if (!IsValid(AbilitySystemComponent))
+	{
+		return;
+	}
+
+	// Owner = PlayerState（ASC 真正的拥有者），Avatar = 本角色（表现与移动的载体）。
+	// 服务器与客户端都必须调用，否则客户端的能力/属性拿不到 Avatar，什么都不生效。
+	AbilitySystemComponent->InitAbilityActorInfo(FPSPlayerState, this);
+
+	if (HasAuthority())
+	{
+		// 授予启动能力 + 初始化属性。两个动作各只做一次，
+		// 标记存在 PlayerState 上（跨重生保留），避免重生后能力被重复授予。
+		FPSPlayerState->EnsureStartupState(this);
+
+		// 重生出来的新角色不应该带着上一局的死亡标签。
+		AbilitySystemComponent->RemoveLooseGameplayTag(FPSTags::TAG_State_Dead.GetTag());
+	}
+
+	// 把 GAS 的当前属性同步给本角色的 UHealthComponent。
+	// 每次换角色（重生）都要做一次，否则新血条会停在 UHealthComponent 构造函数的默认值上。
+	if (const UFPSAttributeSet* AttributeSet = FPSPlayerState->GetFPSAttributeSet())
+	{
+		if (IsValid(Health))
+		{
+			Health->SetFromGAS(
+				AttributeSet->GetHealth(),
+				AttributeSet->GetMaxHealth(),
+				AttributeSet->GetShield(),
+				AttributeSet->GetMaxShield());
+		}
+	}
+}
+
+void AFPSCharacter::Input_Smoke()
+{
+	// 按键 -> 按标签激活能力。能力本身是 ServerOnly，
+	// 客户端这一次调用会被 GAS 转成 ServerTryActivateAbility RPC，由服务器执行。
+	if (UAbilitySystemComponent* AbilitySystemComponent = GetAbilitySystemComponent())
+	{
+		FGameplayTagContainer AbilityTags;
+		AbilityTags.AddTag(FPSTags::TAG_Ability_Smoke.GetTag());
+		AbilitySystemComponent->TryActivateAbilitiesByTag(AbilityTags);
+	}
+}
+//Modify//
 
 FName AFPSCharacter::GetWeaponGripPoint_Implementation(const FGameplayTag& WeaponType) const
 {
@@ -318,16 +424,85 @@ void AFPSCharacter::AddAmmo_Implementation(const FGameplayTag& WeaponType, int32
 
 bool AFPSCharacter::DoDamage_Implementation(float DamageAmount, AActor* DamageInstigator)
 {
+	/*
+	//original code
 	if (!IsValid(Health)) return false;
 
 	if (Health->ChangeHealthByAmount(-DamageAmount, DamageInstigator))
 	{
-		return true; 
+		return true;
 	}
-	
+
 	const int32 MontageSelection = FMath::RandRange(0, HitReacts.Num() - 1);
 	Multicast_HitReact(MontageSelection);
 	return false;
+	*/
+	//Modify//
+	// 改造后血量不再直接改 UHealthComponent，而是走统一的 GAS 伤害通路：
+	//   ApplyGameplayEffectSpecToSelf(UFPSDamageEffect, SetByCaller Data.Damage.Bullet = -DamageAmount)
+	//     -> UFPSAttributeSet::PostGameplayEffectExecute
+	//     -> 先扣护盾、溢出部分才扣血
+	//     -> UHealthComponent::SetFromGAS 广播原有的 OnHealthChanged
+	//
+	// 接口签名与调用方（UCombatComponent::Sever_Fire）完全不变，
+	// 返回值语义也不变：true = 这一击致命。
+	// 注意：本函数在服务器上执行（Sever_Fire 是 Server RPC），属性改动是权威的。
+	UAbilitySystemComponent* AbilitySystemComponent = GetAbilitySystemComponent();
+
+	if (!IsValid(AbilitySystemComponent) || !IsValid(DamageEffectClass))
+	{
+		// 兜底：GAS 还没接好（例如 DamageEffectClass 忘配）时退回旧逻辑，
+		// 否则会出现"能开枪但完全打不掉血"这种最难排查的状态。
+		if (!IsValid(Health)) return false;
+
+		if (Health->ChangeHealthByAmount(-DamageAmount, DamageInstigator))
+		{
+			return true;
+		}
+
+		if (HitReacts.Num() > 0)
+		{
+			const int32 MontageSelection = FMath::RandRange(0, HitReacts.Num() - 1);
+			Multicast_HitReact(MontageSelection);
+		}
+		return false;
+	}
+
+	FGameplayEffectContextHandle EffectContext = AbilitySystemComponent->MakeEffectContext();
+	// 记录伤害来源，供以后的击杀提示 / 伤害来源显示取用。
+	EffectContext.AddInstigator(DamageInstigator, DamageInstigator);
+
+	FGameplayEffectSpecHandle DamageSpec =
+		AbilitySystemComponent->MakeOutgoingSpec(DamageEffectClass, 1.f, EffectContext);
+
+	if (!DamageSpec.IsValid())
+	{
+		return false;
+	}
+
+	// 约定：SetByCaller 一律传【负值】（沿用参考工程 GASCrashCourse 的做法）。
+	DamageSpec = UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
+		DamageSpec, FPSTags::TAG_Data_Damage_Bullet.GetTag(), -DamageAmount);
+
+	AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*DamageSpec.Data.Get());
+
+	// 结算后立刻读结果：Instant GE 是同步执行的，此刻属性已经是最终值。
+	const UFPSAttributeSet* AttributeSet = nullptr;
+	if (const AFPSPlayerState* FPSPlayerState = GetPlayerState<AFPSPlayerState>())
+	{
+		AttributeSet = FPSPlayerState->GetFPSAttributeSet();
+	}
+	const bool bLethal = IsValid(AttributeSet) && AttributeSet->GetHealth() <= 0.f;
+
+	// 与改造前一致：只有没打死才播受击蒙太奇（打死了走死亡流程的 DeathEffects）。
+	if (!bLethal && HitReacts.Num() > 0)
+	{
+		const int32 MontageSelection = FMath::RandRange(0, HitReacts.Num() - 1);
+		Multicast_HitReact(MontageSelection);
+	}
+
+	return bLethal;
+	//Modify//
 }
 
 void AFPSCharacter::Multicast_HitReact_Implementation(int32 MontageIndex)

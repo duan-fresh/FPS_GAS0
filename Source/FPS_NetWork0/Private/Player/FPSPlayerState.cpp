@@ -2,6 +2,14 @@
 #include "Player/FPSPlayerState.h"
 
 #include "TimerManager.h"
+//Modify//
+#include "AbilitySystem/FPSAbilitySystemComponent.h"
+#include "AbilitySystem/FPSAttributeSet.h"
+#include "Abilities/GameplayAbility.h"
+#include "Character/FPSCharacter.h"
+#include "GameplayAbilitySpec.h"
+#include "GameplayEffect.h"
+//Modify//
 #include "Blueprint/UserWidget.h"
 #include "Data/SpecialElimData.h"
 #include "GameFramework/PlayerController.h"
@@ -10,7 +18,25 @@
 AFPSPlayerState::AFPSPlayerState()
 {
 	SetNetUpdateFrequency(100.f);
-	
+
+	//Modify//
+	// ---------------- GAS ----------------
+	// ASC 挂 PlayerState：AFPSGameMode::RequestRespawn 会 Destroy 旧 Pawn 再生成新的，
+	// 挂在 Pawn 上的话每次重生都会连能力带属性一起丢。
+	//
+	// ReplicationMode = Mixed 是玩家角色的标准选择：
+	//   - 本人会完整收到自己的 GameplayEffect 信息（冷却、Buff 都靠它做 UI）；
+	//   - 其他人只收到最少必要信息（GameplayCue、标签），省带宽。
+	AbilitySystemComponent = CreateDefaultSubobject<UFPSAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
+
+	// AttributeSet 是 UObject 而非组件，由 ASC 负责生成与复制。
+	AttributeSet = CreateDefaultSubobject<UFPSAttributeSet>(TEXT("AttributeSet"));
+	bStartupAbilitiesGranted = false;
+	bAttributesInitialized = false;
+	//Modify//
+
+
 	ScoredElims = 0;
 	Defeats = 0;
 	Hits = 0;
@@ -259,3 +285,80 @@ void AFPSPlayerState::Client_LostTheLead_Implementation()
 		}
 	}
 }
+
+//Modify//
+UAbilitySystemComponent* AFPSPlayerState::GetAbilitySystemComponent() const
+{
+	return AbilitySystemComponent;
+}
+
+void AFPSPlayerState::EnsureStartupState(AFPSCharacter* Character)
+{
+	// 纯服务器逻辑：能力只在服务器授予，客户端通过能力列表复制拿到。
+	if (!HasAuthority() || !IsValid(Character) || !IsValid(AbilitySystemComponent))
+	{
+		return;
+	}
+
+	// ---- 授予启动能力：整个 PlayerState 生命周期只做一次 ----
+	// 标记放在 PlayerState 上而不是 Character 上，正是因为角色会重生重建：
+	// 若放在角色上，重生后会再授予一遍，同一个能力会在 ASC 里叠成两份。
+	if (!bStartupAbilitiesGranted)
+	{
+		bStartupAbilitiesGranted = true;
+
+		for (const TSubclassOf<UGameplayAbility>& AbilityClass : Character->StartupAbilities)
+		{
+			if (!IsValid(AbilityClass))
+			{
+				continue;
+			}
+
+			AbilitySystemComponent->GiveAbility(
+				FGameplayAbilitySpec(AbilityClass, /*Level=*/1, /*InputID=*/INDEX_NONE, /*SourceObject=*/nullptr));
+		}
+	}
+
+	// ---- 初始化属性：同样只做一次 ----
+	// 重生时属性归位走的是 ApplyResetAttributesEffect()，不是这里（见头文件说明）。
+	if (!bAttributesInitialized)
+	{
+		bAttributesInitialized = true;
+
+		if (IsValid(InitAttributesEffect))
+		{
+			FGameplayEffectContextHandle ContextHandle = AbilitySystemComponent->MakeEffectContext();
+			ContextHandle.AddSourceObject(this);
+
+			FGameplayEffectSpecHandle SpecHandle =
+				AbilitySystemComponent->MakeOutgoingSpec(InitAttributesEffect, 1.f, ContextHandle);
+
+			if (SpecHandle.IsValid())
+			{
+				AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+			}
+		}
+	}
+}
+
+void AFPSPlayerState::ApplyResetAttributesEffect()
+{
+	if (!HasAuthority() || !IsValid(AbilitySystemComponent) || !IsValid(ResetAttributesEffect))
+	{
+		return;
+	}
+
+	FGameplayEffectContextHandle ContextHandle = AbilitySystemComponent->MakeEffectContext();
+	ContextHandle.AddSourceObject(this);
+
+	FGameplayEffectSpecHandle SpecHandle =
+		AbilitySystemComponent->MakeOutgoingSpec(ResetAttributesEffect, 1.f, ContextHandle);
+
+	if (SpecHandle.IsValid())
+	{
+		// GE 执行完会走 UFPSAttributeSet::PostGameplayEffectExecute -> UHealthComponent::SetFromGAS，
+		// 血条与护盾条会自动跟着回满，这里不需要额外操作 UI。
+		AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+	}
+}
+//Modify//

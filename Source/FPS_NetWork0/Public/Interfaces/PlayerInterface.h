@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "../../../../../../../../Program Files/Epic Games/UE_5.8/Engine/Plugins/Editor/GameplayTagsEditor/Source/GameplayTagsEditor/Private/GameplayTagEditorUtilities.h"
+#include "GameplayTagContainer.h"
 #include "UObject/Interface.h"
 #include "PlayerInterface.generated.h"
 
