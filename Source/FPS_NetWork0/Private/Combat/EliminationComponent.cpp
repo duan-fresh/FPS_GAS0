@@ -109,11 +109,13 @@ void UEliminationComponent::ProcessStreaks(ESpecialElimType& OutElimType, AFPSPl
 	AFPSPlayerState* VictimPS)
 {
 	++Streak;
+	// 每次击杀都要记最高连杀。原来这句在下面的 if 里，导致 1~4 连杀永远不会被记录，
+	// 而"历史最高连杀"是要写进存档的 —— 一个 3 连杀的玩家存档里会一直是 0。
+	AttackerPS->UpdateHighestStreak(Streak);
 	if (Streak >= ElimsNeededForStreak)
 	{
 		OutElimType |= ESpecialElimType::Streak;
 		AttackerPS->SetOnStreak(true);
-		AttackerPS->UpdateHighestStreak(Streak);
 	}
 	if (VictimPS->IsOnStreak())
 	{
@@ -136,6 +138,9 @@ void UEliminationComponent::HandleFirstBlood(AFPSGameState* GameState, ESpecialE
 	{
 		OutElimType |= ESpecialElimType::FirstBlood;
 		AttackerPS->GotFirstBlood();
+		// 首杀标记在这里落位。原来这句写在 AFPSGameState::UpdateLeader() 的末尾，
+		// 属于职责错位 —— 一旦有人在开局时调 UpdateLeader() 做初始化，首杀就永远发不出来。
+		GameState->MarkFirstBloodAsHad();
 	}
 }
 

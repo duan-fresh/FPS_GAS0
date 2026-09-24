@@ -13,6 +13,11 @@ bool AFPSGameState::HasFirstBloodBeenHad() const
 	return bHasFirstBloodBeenHad;
 }
 
+void AFPSGameState::MarkFirstBloodAsHad()
+{
+	bHasFirstBloodBeenHad = true;
+}
+
 void AFPSGameState::UpdateLeader()
 {
 	TArray<APlayerState*> LocalSortedPlayers = PlayerArray;
@@ -48,7 +53,6 @@ void AFPSGameState::UpdateLeader()
 			}
 		}
 	}
-	bHasFirstBloodBeenHad = true;
 }
 
 AFPSPlayerState* AFPSGameState::GetSoleLeader() const

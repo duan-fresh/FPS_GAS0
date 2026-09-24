@@ -9,7 +9,7 @@
 #include "GameplayEffect.h"
 #include "Tags/ShooterGameplayTags.h"
 //Modify//
-#include "EditorCategoryUtils.h"
+#include "TimerManager.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -17,13 +17,13 @@
 #include "Engine/Engine.h"
 #include "Engine/SkeletalMesh.h"
 #include "FPS_NetWork0/FPS_NetWork0.h"
+#include "Game/FPSGameMode.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/Pawn.h"
 #include "Interfaces/PlayerInterface.h"
 #include "Kismet/KismetMathLibrary.h"
 #include "Net/UnrealNetwork.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
-#include "ViewportInteractions/ViewportInteraction.h"
 #include "Weapon/Weapon.h"
 
 
@@ -437,8 +437,18 @@ void UCombatComponent::Sever_Fire_Implementation(const FHitResult& Hit)
 {
 	if (!IsValid(CurrentWeapon)) return;
 	if (CurrentWeapon->Ammo <= 0) return;
-	const bool bHit = IsValid(Hit.GetActor()) && Hit.GetActor()->Implements<UPlayerInterface>();
 	const bool bHeadShot = Hit.BoneName == "head";//Tips:加伤
+
+	//Modify//
+	// 判胜停局之后不再产生任何"有效命中"：不结算伤害、不广播 OnRoundReported，
+	// 连命中/未命中统计也不记 —— 赛后的击杀不会污染战绩，更不会进存档。
+	// 拦在这里而不是"开火前"，是为了让玩家赛后仍然能开枪、有弹孔与音效反馈，只是打不死人。
+	// 本函数是 Server RPC，跑在服务端，所以 GetAuthGameMode 一定拿得到 GameMode。
+	AFPSGameMode* FPSGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AFPSGameMode>() : nullptr;
+	const bool bMatchOver = IsValid(FPSGameMode) && FPSGameMode->HasMatchEnded();
+	const bool bHit = !bMatchOver && IsValid(Hit.GetActor()) && Hit.GetActor()->Implements<UPlayerInterface>();
+	//Modify//
+	
 	bool bLethal = false;
 	if (bHit)
 	{
@@ -460,7 +470,6 @@ void UCombatComponent::Sever_Fire_Implementation(const FHitResult& Hit)
 			if (IsValid(SourceASC) && IsValid(TargetASC))
 			{
 				FGameplayEffectContextHandle EffectContext = SourceASC->MakeEffectContext();
-				// 记录谁打的、用什么打的（供以后做击杀提示 / 伤害来源显示时取用）
 				EffectContext.AddInstigator(GetOwner(), CurrentWeapon);
 
 				FGameplayEffectSpecHandle DoTSpec =

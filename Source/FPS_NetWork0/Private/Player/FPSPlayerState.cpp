@@ -12,14 +12,16 @@
 //Modify//
 #include "Blueprint/UserWidget.h"
 #include "Data/SpecialElimData.h"
+#include "Engine/World.h"
+#include "Game/FPSGameInstance.h"
 #include "GameFramework/PlayerController.h"
+#include "Net/UnrealNetwork.h"
 #include "UI/SpecialElim.h"
 
 AFPSPlayerState::AFPSPlayerState()
 {
 	SetNetUpdateFrequency(100.f);
-
-	//Modify//
+	
 	// ---------------- GAS ----------------
 	// ASC 挂 PlayerState：AFPSGameMode::RequestRespawn 会 Destroy 旧 Pawn 再生成新的，
 	// 挂在 Pawn 上的话每次重生都会连能力带属性一起丢。
@@ -34,9 +36,8 @@ AFPSPlayerState::AFPSPlayerState()
 	AttributeSet = CreateDefaultSubobject<UFPSAttributeSet>(TEXT("AttributeSet"));
 	bStartupAbilitiesGranted = false;
 	bAttributesInitialized = false;
-	//Modify//
-
-
+	// ---------------- GAS ----------------
+	
 	ScoredElims = 0;
 	Defeats = 0;
 	Hits = 0;
@@ -52,6 +53,18 @@ AFPSPlayerState::AFPSPlayerState()
 	bIsProcessingQueue = false;
 	ElimDisplayTime = 0.5f;
 }
+
+void AFPSPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	
+	// ScoredElims 发给所有客户端：AFPSGameState::UpdateLeader() 与 LeaderBoard 都要读【别人】的击杀数。
+	DOREPLIFETIME(AFPSPlayerState, ScoredElims);
+	DOREPLIFETIME_CONDITION(AFPSPlayerState, HighestStreak, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(AFPSPlayerState, Defeats, COND_OwnerOnly);
+}
+
+#pragma region BaseVariablesProcess
 
 void AFPSPlayerState::AddScoredElim()
 {
@@ -154,6 +167,10 @@ int32 AFPSPlayerState::GetScoredElims() const
 {
 	return ScoredElims;
 }
+
+#pragma endregion BaseVariablesProcess
+
+#pragma region ElimUI
 
 void AFPSPlayerState::Client_ScoredElim_Implementation(int32 ElimScore)
 {
@@ -286,7 +303,10 @@ void AFPSPlayerState::Client_LostTheLead_Implementation()
 	}
 }
 
-//Modify//
+#pragma endregion ElimUI
+
+#pragma region GAS
+
 UAbilitySystemComponent* AFPSPlayerState::GetAbilitySystemComponent() const
 {
 	return AbilitySystemComponent;
@@ -299,39 +319,29 @@ void AFPSPlayerState::EnsureStartupState(AFPSCharacter* Character)
 	{
 		return;
 	}
-
 	// ---- 授予启动能力：整个 PlayerState 生命周期只做一次 ----
-	// 标记放在 PlayerState 上而不是 Character 上，正是因为角色会重生重建：
-	// 若放在角色上，重生后会再授予一遍，同一个能力会在 ASC 里叠成两份。
 	if (!bStartupAbilitiesGranted)
 	{
 		bStartupAbilitiesGranted = true;
-
 		for (const TSubclassOf<UGameplayAbility>& AbilityClass : Character->StartupAbilities)
 		{
 			if (!IsValid(AbilityClass))
 			{
 				continue;
 			}
-
 			AbilitySystemComponent->GiveAbility(
 				FGameplayAbilitySpec(AbilityClass, /*Level=*/1, /*InputID=*/INDEX_NONE, /*SourceObject=*/nullptr));
 		}
 	}
-
 	// ---- 初始化属性：同样只做一次 ----
-	// 重生时属性归位走的是 ApplyResetAttributesEffect()，不是这里（见头文件说明）。
 	if (!bAttributesInitialized)
 	{
 		bAttributesInitialized = true;
-
 		if (IsValid(InitAttributesEffect))
 		{
 			FGameplayEffectContextHandle ContextHandle = AbilitySystemComponent->MakeEffectContext();
 			ContextHandle.AddSourceObject(this);
-
-			FGameplayEffectSpecHandle SpecHandle =
-				AbilitySystemComponent->MakeOutgoingSpec(InitAttributesEffect, 1.f, ContextHandle);
+			FGameplayEffectSpecHandle SpecHandle =AbilitySystemComponent->MakeOutgoingSpec(InitAttributesEffect, 1.f, ContextHandle);
 
 			if (SpecHandle.IsValid())
 			{
@@ -351,14 +361,31 @@ void AFPSPlayerState::ApplyResetAttributesEffect()
 	FGameplayEffectContextHandle ContextHandle = AbilitySystemComponent->MakeEffectContext();
 	ContextHandle.AddSourceObject(this);
 
-	FGameplayEffectSpecHandle SpecHandle =
-		AbilitySystemComponent->MakeOutgoingSpec(ResetAttributesEffect, 1.f, ContextHandle);
+	FGameplayEffectSpecHandle SpecHandle =AbilitySystemComponent->MakeOutgoingSpec(ResetAttributesEffect, 1.f, ContextHandle);
 
 	if (SpecHandle.IsValid())
 	{
 		// GE 执行完会走 UFPSAttributeSet::PostGameplayEffectExecute -> UHealthComponent::SetFromGAS，
-		// 血条与护盾条会自动跟着回满，这里不需要额外操作 UI。
 		AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 	}
 }
-//Modify//
+
+#pragma endregion GAS
+
+//-----For SaveGameData-----
+void AFPSPlayerState::Client_MatchEnded_Implementation(bool bWon)
+{
+	// 这条 RPC 只在【本机玩家自己的机器】上执行一次，所以它承担两件事：
+	//   1. 把 bWon 落到本机 —— 它是服务端判定结果，没有别的通路；
+	//   2. 把本机玩家的档案写盘。
+	if (bWon)
+	{
+		bWinner = true;
+	}
+	if (UFPSGameInstance* FPSGameInstance = GetWorld() ? Cast<UFPSGameInstance>(GetWorld()->GetGameInstance()) : nullptr)
+	{
+		FPSGameInstance->SaveMatchResult(GetPlayerName(), ScoredElims, HighestStreak, bWon);
+	}
+
+	OnMatchEnded.Broadcast(bWon);
+}

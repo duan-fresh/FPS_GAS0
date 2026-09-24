@@ -22,6 +22,9 @@ public class FPS_NetWork0 : ModuleRules
 			"Slate",
 			"UMG",
 			"SlateCore",
+			"MultiplayerSessions",
+			"OnlineSubsystem", 
+			"OnlineSubsystemSteam" 
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });

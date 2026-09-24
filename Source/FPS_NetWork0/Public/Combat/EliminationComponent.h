@@ -29,7 +29,7 @@ public:
 private:
 	float LastElimTime;
 	int32 SequentialElims;
-	int32 Streak;
+	int32 Streak;//{Tips}：应该在PlayerState中的，但是考虑到其与当前角色绑定，这样也可以
 	
 	AFPSPlayerState* GetPlayerStateFromActor(AActor* Actor);
 	void ProcessHitOrMiss(bool bHit, AFPSPlayerState* AttackerPS);
