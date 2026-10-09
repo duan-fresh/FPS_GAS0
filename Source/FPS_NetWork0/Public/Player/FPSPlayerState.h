@@ -120,31 +120,53 @@ public:
 	
 #pragma endregion UI
 	
+#pragma region Profile
+	
 	/**
-	 * 本局结束通知。AFPSGameMode 判胜后对每个 PlayerState 调一次。
-	 * bWon 不能省：它是服务端的判定结果，唯一的替代是靠 bWinner 复制过来，
-	 * 但与 MatchState 的到达顺序没有保证，可能先收到"比赛结束"再收到"你赢了"。
+	 * 把本局当前战绩推进 GameInstance 内存里的档案（不写盘，见 UFPSGameInstance::UpdateProfileProgress）。
+	 *
+	 *	// {Tips}：理解底层。。。
+	 * 只有"本机玩家自己的那个 PlayerState"才真正干活，其余情况（专用服务器、以及别人机器上
+	 * 那个玩家的 PlayerState）直接 return。判据用 GameInstance 的 GetFirstLocalPlayerController，
+	 * 而不是 GetPlayerController()->IsLocalController()：两者等价，但前者不依赖 Owner 属性
+	 * 的复制到达时机（PS 自己属性的 OnRep 与 PC 的 PlayerState 属性走的是不同 channel）。
+	 *
+	 * 调用点有三处：
+	 *   - AddScoredElim / UpdateHighestStreak（服务端路径）—— listen server 宿主是自己改属性的，
+	 *     OnRep 永远不会替他触发，必须显式推；
+	 *   - OnRep_ScoredElims / OnRep_HighestStreak（客户端路径）；
+	 *   - AFPS_Controller::RequestLeaveMatch（离开前补一次）。
 	 */
+	void PushProgressToLocalProfile();
+
+	//ScoredElims 是无条件复制（LeaderBoard 要读别人的击杀数），所以每个客户端上每个PlayerState的OnRep都会响——过滤靠 PushProgressToLocalProfile 里的守卫。 
+	UFUNCTION()
+	void OnRep_ScoredElims();
+
+	//COND_OwnerOnly，只有本机玩家自己的客户端会收到，所以这个OnRep只在自己机器上响
+	UFUNCTION()
+	void OnRep_HighestStreak();
+	
+	//本局结束通知。AFPSGameMode 判胜后对每个 PlayerState 调一次。 
 	//-----SaveGameData-----
 	UFUNCTION(Client, Reliable)
 	void Client_MatchEnded(bool bWon);
 
+#pragma endregion Profile
+	
 private:
 	
 #pragma region BaseVariable
 	
-	//-----SaveGameData-----
-	// 把值推给拥有者自己，导致客户端读别人的 GetScoredElims() 恒为 0，
-	UPROPERTY(Replicated)
+	UPROPERTY(ReplicatedUsing = OnRep_ScoredElims)
 	int32 ScoredElims;
 	// 只有本机玩家自己需要（写盘时读），所以是 COND_OwnerOnly 复制。
 	UPROPERTY(Replicated)
 	int32 Defeats;
-	UPROPERTY(Replicated)
+	UPROPERTY(ReplicatedUsing = OnRep_HighestStreak)
 	int32 HighestStreak;
-	bool bWinner;
-	//-----SaveGameData-----
 	
+	bool bWinner;
 	int32 Hits;
 	int32 Misses;
 	bool bOnStreak; 

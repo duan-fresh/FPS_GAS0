@@ -1,11 +1,11 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+
 
 #include "AbilitySystem/Effects/FPSResetAttributesEffect.h"
 
 #include "AbilitySystem/FPSAttributeSet.h"
 #include "GameplayEffectAttributeCaptureDefinition.h"
 
-namespace//匿名 namespace 的作用：让里面的函数只在当前 .cpp 文件内部可见，避免污染全局命名空间，也避免和别的文件里的同名函数冲突。所以 MakeFillToMaxModifier 是一个当前文件专用的小工具函数。
+namespace//匿名 namespace 的作用：让里面的函数只在当前 .cpp 文件内部可见，避免污染全局命名空间，也避免和别的文件里的同名函数冲突。MakeFillToMaxModifier 是当前文件专用的小工具函数。
 {
 	/**
 	 * 生成一条 "Attr += Target 的 BackingAttr" 的 Modifier。

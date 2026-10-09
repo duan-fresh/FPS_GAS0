@@ -69,6 +69,12 @@ void AFPSPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 void AFPSPlayerState::AddScoredElim()
 {
 	++ScoredElims;
+	//{Modify_存档触发点}
+	// 服务端路径。listen server 宿主是【自己改属性】的，OnRep 永远不会替他触发，
+	// 所以必须在这里显式推一次，否则宿主按 Esc 退出时档案里还是旧战绩。
+	// 远程客户端的 PS 也会走到这行，但会被 PushProgressToLocalProfile 里的守卫挡掉。
+	PushProgressToLocalProfile();
+	//-----End-----
 }
 
 void AFPSPlayerState::AddDefeat()
@@ -116,6 +122,12 @@ void AFPSPlayerState::UpdateHighestStreak(int32 StreakCount)//Streak连续击杀
 	{
 		HighestStreak = StreakCount;
 	}
+	//{Modify_存档触发点}
+	// 服务端路径，理由同 AddScoredElim。
+	// 刻意放在 if 【外面】：连杀没刷新时这次调用虽然不改值，但同一帧的 AddScoredElim 已经推过，
+	// 这里再推一次是幂等的（取 max），不会出问题；放外面是为了将来单独改这个函数时也不会漏推。
+	PushProgressToLocalProfile();
+	//-----End-----
 }
 
 void AFPSPlayerState::AddRevengeElim()
@@ -372,6 +384,36 @@ void AFPSPlayerState::ApplyResetAttributesEffect()
 
 #pragma endregion GAS
 
+#pragma region Profile
+
+void AFPSPlayerState::OnRep_ScoredElims()
+{
+	PushProgressToLocalProfile();
+}
+
+void AFPSPlayerState::OnRep_HighestStreak()
+{
+	PushProgressToLocalProfile();
+}
+
+void AFPSPlayerState::PushProgressToLocalProfile()
+{
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	UFPSGameInstance* FPSGameInstance = Cast<UFPSGameInstance>(World->GetGameInstance());
+	if (!IsValid(FPSGameInstance)) return;
+	
+	// 这一句同时挡掉了三种情况：
+	//   别人的 PlayerState（别人的 PC 不在本机，PlayerState != this）
+	//   专用服务器（GetFirstLocalPlayerController 返回 nullptr）
+	//   AI/Bot 的 PlayerState（同上）
+	APlayerController* LocalPC = FPSGameInstance->GetFirstLocalPlayerController(World);
+	if (!LocalPC || LocalPC->PlayerState != this) return;
+
+	FPSGameInstance->UpdateProfileProgress(GetPlayerName(), ScoredElims, HighestStreak);
+}
+
 //-----For SaveGameData-----
 void AFPSPlayerState::Client_MatchEnded_Implementation(bool bWon)
 {
@@ -389,3 +431,5 @@ void AFPSPlayerState::Client_MatchEnded_Implementation(bool bWon)
 
 	OnMatchEnded.Broadcast(bWon);
 }
+
+#pragma endregion Profile
